@@ -82,6 +82,7 @@
         <button type="button" id="emoji-btn" class="icon-btn" title="이모지">😊</button>
         <button type="button" id="poll-btn" class="icon-btn" title="투표 만들기">📊</button>
         <button type="button" id="intake-btn" class="icon-btn" title="수합(설문/제출) 만들기">📥</button>
+        <button type="button" id="sched-btn" class="icon-btn" title="일정 조율(가능시간 모으기)">📅</button>
         <textarea id="msg-input" class="msg-input" rows="1" placeholder="메시지를 입력하세요…" maxlength="4000"></textarea>
         <button type="submit" id="send-btn" class="btn-send" title="전송">전송</button>
         <div id="emoji-pop" class="emoji-pop hidden"></div>
@@ -115,6 +116,26 @@
         <div class="poll-actions">
           <button type="button" id="poll-create" class="ub-btn">만들기</button>
           <button type="button" id="poll-cancel" class="ub-btn ghost">취소</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 일정 조율 모달 -->
+  <div id="sched-modal" class="modal-overlay hidden">
+    <div class="summary-box poll-box">
+      <div class="summary-head"><b>📅 일정 조율 만들기</b><button type="button" id="sched-close" class="icon-btn" title="닫기">✕</button></div>
+      <div class="poll-form">
+        <input id="sched-title" type="text" placeholder="제목 (예: 9월 정기회의 일정)" maxlength="200" autocomplete="off" />
+        <div class="sched-add-row">
+          <input id="sched-dt" type="datetime-local" />
+          <button type="button" id="sched-add" class="btn-ghost-sm">+ 후보시간 추가</button>
+        </div>
+        <div id="sched-slots" class="sched-slots"></div>
+        <label class="intake-duerow">응답 마감(선택) <input id="sched-due" type="datetime-local" /></label>
+        <div class="poll-actions">
+          <button type="button" id="sched-create" class="ub-btn">만들기</button>
+          <button type="button" id="sched-cancel" class="ub-btn ghost">취소</button>
         </div>
       </div>
     </div>

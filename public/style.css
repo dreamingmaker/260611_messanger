@@ -436,6 +436,23 @@ mark { background: #ffe9a8; padding: 0 1px; }
 #intake-prompt { border: 1.5px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; resize: vertical; outline: none; width: 100%; box-sizing: border-box; }
 #intake-due { border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
 
+/* 일정 조율 (when2meet) */
+.sched-card { margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: #fbfcfe; min-width: 260px; color: var(--text); }
+.msg.mine .sched-card { background: rgba(255,255,255,.95); border-color: rgba(255,255,255,.5); }
+.sched-head { font-weight: 700; }
+.sched-best { font-size: 12px; color: #114b22; background: #e6ffec; border-radius: 8px; padding: 5px 8px; margin-top: 6px; }
+.sched-slot { position: relative; display: flex; align-items: center; width: 100%; text-align: left; border: 1px solid var(--border); background: #fff; border-radius: 8px; padding: 7px 10px; margin: 4px 0; cursor: pointer; font: inherit; font-size: 13px; overflow: hidden; }
+.sched-slot:hover { border-color: var(--accent); }
+.sched-slot.mine { border-color: var(--accent); }
+.sched-slot.best .sched-bar { background: #bbf0c8; }
+.sched-bar { position: absolute; left: 0; top: 0; bottom: 0; background: #dbe8ff; z-index: 0; transition: width .2s; }
+.sched-slot-label { position: relative; z-index: 1; flex: 1; }
+.sched-slot-count { position: relative; z-index: 1; margin-left: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sched-add-row { display: flex; gap: 6px; align-items: center; }
+.sched-slots { display: flex; flex-wrap: wrap; gap: 6px; }
+.sched-slot-chip { display: inline-flex; align-items: center; gap: 6px; background: #eef4ff; border: 1px solid #cfe0ff; border-radius: 14px; padding: 3px 6px 3px 10px; font-size: 12px; }
+.sched-slot-chip button { border: none; background: #d7e3f7; border-radius: 50%; width: 16px; height: 16px; cursor: pointer; font-size: 10px; line-height: 1; padding: 0; }
+
 /* 문서함 + 버전 diff */
 .docs-box { max-width: 640px; }
 .docs-head-spacer { flex: 1; }

@@ -265,7 +265,7 @@ io.on('connection', (socket) => {
     uiBroadcastChannels();
   });
 
-  socket.on('send', ({ channel, topic, text, image, imw, imh, file, mentions, poll, intake } = {}) => {
+  socket.on('send', ({ channel, topic, text, image, imw, imh, file, mentions, poll, intake, sched } = {}) => {
     if (!identity.name) return;
     if (typeof channel !== 'string') return;
     const isDM = channel.indexOf('dm:') === 0;
@@ -309,12 +309,20 @@ io.on('connection', (socket) => {
       const due = (typeof intake.due === 'number' && intake.due > 0) ? intake.due : 0;
       if (ttl && (kind === 'text' || iopts.length >= 2)) intakeObj = { title: ttl, prompt: ipr, kind: kind, opts: iopts, due: due };
     }
-    if (!text.trim() && !img && !f && !pollObj && !intakeObj) return;
+    let schedObj = null;
+    if (sched && typeof sched === 'object' && typeof sched.title === 'string' && Array.isArray(sched.slots)) {
+      const sttl = stripCtrl(sched.title).trim().slice(0, 200);
+      const sslots = sched.slots.filter((o) => typeof o === 'string').map((o) => stripCtrl(o).trim().slice(0, 80)).filter(Boolean).slice(0, 50);
+      const sdue = (typeof sched.due === 'number' && sched.due > 0) ? sched.due : 0;
+      if (sttl && sslots.length >= 2) schedObj = { title: sttl, slots: sslots, due: sdue };
+    }
+    if (!text.trim() && !img && !f && !pollObj && !intakeObj && !schedObj) return;
     const fields = { type: 'msg', channel, topic, text, author: { id: myId, name: identity.name, color: identity.color } };
     if (img) { fields.image = img; fields.imw = w; fields.imh = h; }
     if (f) fields.file = f;
     if (pollObj) fields.poll = pollObj;
     if (intakeObj) fields.intake = intakeObj;
+    if (schedObj) fields.sched = schedObj;
     if (Array.isArray(mentions)) { const ids = mentions.filter((x) => typeof x === 'string').slice(0, 30); if (ids.length) fields.mentions = ids; }
     publish(newRecord(fields));
   });
@@ -390,6 +398,18 @@ io.on('connection', (socket) => {
     publish(newRecord(rec));
   });
 
+  // 일정조율 가용시간 응답: target=일정 메시지, slots=가능 슬롯 index 배열(사람당 최신만 유효)
+  socket.on('avail', ({ target, slots } = {}) => {
+    if (!identity.name || typeof target !== 'string' || !Array.isArray(slots)) return;
+    const t = store.records[target];
+    if (!t || t.type !== 'msg' || !t.sched) return;
+    const nn = t.sched.slots.length; const set = []; const seen = {};
+    for (const x of slots) { const i = Number(x); if (Number.isInteger(i) && i >= 0 && i < nn && !seen[i]) { seen[i] = 1; set.push(i); } }
+    const rec = { type: 'avail', target: target, slots: set, author: { id: myId, name: identity.name } };
+    if (typeof t.channel === 'string' && t.channel.indexOf('dm:') === 0) rec.dm = t.channel;
+    publish(newRecord(rec));
+  });
+
   // 문서함: 새 문서/새 버전 업로드(임베드 → 전원 복제로 durable). 버전번호 자동 증가. text=diff용 추출 텍스트
   socket.on('docpost', ({ docId, title, note, file, text } = {}) => {
     if (!identity.name) return;
@@ -431,7 +451,7 @@ function newRecord(fields) {
 // record 수신 대상: null=공개(전체 전파), 배열=해당 참여자 id 에게만(DM 등)
 function audienceOf(rec) {
   if (rec.type === 'msg' && typeof rec.channel === 'string' && rec.channel.indexOf('dm:') === 0) return rec.channel.slice(3).split('|');
-  if ((rec.type === 'del' || rec.type === 'react' || rec.type === 'edit' || rec.type === 'vote' || rec.type === 'submit') && typeof rec.dm === 'string' && rec.dm.indexOf('dm:') === 0) return rec.dm.slice(3).split('|');
+  if ((rec.type === 'del' || rec.type === 'react' || rec.type === 'edit' || rec.type === 'vote' || rec.type === 'submit' || rec.type === 'avail') && typeof rec.dm === 'string' && rec.dm.indexOf('dm:') === 0) return rec.dm.slice(3).split('|');
   return null;
 }
 // 내가 만든 record 를 저장 + UI + 전파(공개=전체, DM=당사자에게만)
@@ -463,6 +483,8 @@ function ingest(rec, sourcePeerId, live) {
     if (typeof rec.target !== 'string' || typeof rec.opt !== 'number') return false;
   } else if (rec.type === 'submit') {
     if (typeof rec.target !== 'string') return false;
+  } else if (rec.type === 'avail') {
+    if (typeof rec.target !== 'string' || !Array.isArray(rec.slots)) return false;
   } else if (rec.type === 'docver') {
     if (typeof rec.docId !== 'string' || !rec.file || typeof rec.file.data !== 'string') return false;
   } else if (rec.type === 'user') {
@@ -476,6 +498,7 @@ function ingest(rec, sourcePeerId, live) {
     if (!tgt || tgt.type !== 'msg') return false; // 대상 없으면 거부(이후 동기화로 재수신 — 자가복구)
     if (rec.type === 'vote' && !tgt.poll) return false; // 투표는 투표 메시지에만
     if (rec.type === 'submit' && !tgt.intake) return false; // 제출은 수합 메시지에만
+    if (rec.type === 'avail' && !tgt.sched) return false; // 가용응답은 일정 메시지에만
     if ((rec.type === 'edit' || rec.type === 'del') && (!rec.author || !tgt.author || rec.author.id !== tgt.author.id)) return false; // 원작성자만
     if (typeof tgt.channel === 'string' && tgt.channel.indexOf('dm:') === 0) rec.dm = tgt.channel; else delete rec.dm;
     aud = audienceOf(rec);

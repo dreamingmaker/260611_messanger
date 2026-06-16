@@ -46,7 +46,7 @@ const summaryModal = $('summary-modal'), summaryTitle = $('summary-title'), summ
 let lastRead = {};
 try { lastRead = JSON.parse(localStorage.getItem('p2p.lastRead') || '{}'); } catch (e) { lastRead = {}; }
 function saveLastRead() { try { localStorage.setItem('p2p.lastRead', JSON.stringify(lastRead)); } catch (e) {} }
-let _edits = {}, _reactions = {}, _votes = {}, _submits = {}, mentionFlags = {};
+let _edits = {}, _reactions = {}, _votes = {}, _submits = {}, _avail = {}, mentionFlags = {};
 const typingUsers = new Map();
 
 // ====================================================================
@@ -196,6 +196,19 @@ function buildSubmits() {
   }
   return out;
 }
+// 일정조율 가용응답 집계: target -> { authorId -> 최신 avail }
+function buildAvail() {
+  const out = {};
+  for (const r of Object.values(recs)) {
+    if (r.type !== 'avail' || !r.author || !Array.isArray(r.slots)) continue;
+    const t = recs[r.target];
+    if (!t || !t.sched) continue;
+    const b = out[r.target] || (out[r.target] = {});
+    const cur = b[r.author.id];
+    if (!cur || r.ts > cur.ts || (r.ts === cur.ts && (r.lc || 0) > (cur.lc || 0))) b[r.author.id] = r;
+  }
+  return out;
+}
 // 주제별 리셋 기준 시각: key(채널,주제) -> 최대 reset.ts. 이 시각 이하(<=)의 메시지는 숨긴다
 function buildResets() {
   const m = {};
@@ -315,7 +328,7 @@ socket.on('record', (r) => {
   if (r.type === 'msg') onMsg(r);
   else if (r.type === 'del') onDelete(r);
   else if (r.type === 'reset') onReset(r);
-  else if (r.type === 'react' || r.type === 'edit' || r.type === 'vote' || r.type === 'submit') rerenderIfCurrent(r.target);
+  else if (r.type === 'react' || r.type === 'edit' || r.type === 'vote' || r.type === 'submit' || r.type === 'avail') rerenderIfCurrent(r.target);
   else if (r.type === 'user') { if (me) { renderUsers(); renderSidebar(); } } // 명부 갱신(오프라인 이름 표시)
   else if (r.type === 'docver') { if (docsModal && !docsModal.classList.contains('hidden')) { if (_openDocId) openDocDetail(_openDocId); else renderDocsList(); } }
   else if (r.type === 'channel') { /* channels 이벤트로 갱신됨 */ }
@@ -583,7 +596,7 @@ function openDM(partnerId) {
 
 function renderThread() {
   view.msgs = msgsOf(cur.channel, cur.topic);
-  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits();
+  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail();
   messages.innerHTML = '';
   if (!view.msgs.length) {
     const emptyMsg = isDMChannel(cur.channel)
@@ -598,7 +611,7 @@ function renderThread() {
 }
 function appendMsg(m) {
   if (!view.msgs.length) messages.innerHTML = '';
-  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits();
+  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail();
   const prev = view.msgs[view.msgs.length - 1] || null;
   view.msgs.push(m);
   appendOne(m, prev);
@@ -645,6 +658,7 @@ function appendOne(m, prev) {
   }
   if (m.poll) bubble.appendChild(renderPollCard(m));
   if (m.intake) bubble.appendChild(renderIntakeCard(m));
+  if (m.sched) bubble.appendChild(renderSchedCard(m));
   body.appendChild(bubble);
   const card = bubble.querySelector('.file-card');
   if (card && m.file) card.onclick = () => downloadFile(m.file);
@@ -1291,6 +1305,94 @@ if (intakeBtn) {
     const dv = $('intake-due').value; if (dv) { const t = Date.parse(dv); if (t) intake.due = t; }
     socket.emit('send', { channel: cur.channel, topic: cur.topic, text: '', intake: intake });
     intakeModal.classList.add('hidden');
+  };
+}
+
+// ====================================================================
+// 일정 조율 (when2meet)
+// ====================================================================
+const schedModal = $('sched-modal'), schedBtn = $('sched-btn'), schedSlotsEl = $('sched-slots');
+const WDAY = ['일', '월', '화', '수', '목', '금', '토'];
+function fmtSlotLabel(v) {
+  const d = new Date(v); if (isNaN(d.getTime())) return String(v);
+  return (d.getMonth() + 1) + '/' + d.getDate() + '(' + WDAY[d.getDay()] + ') ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function renderSchedCard(m) {
+  const sc = m.sched || {}; const slots = sc.slots || [];
+  const av = _avail[m.id] || {};
+  const responders = Object.keys(av);
+  const all = intakeExpected(m.channel);
+  const missing = all.filter((u) => responders.indexOf(u.id) === -1);
+  const counts = slots.map(() => []);
+  for (const aid of responders) for (const i of av[aid].slots) if (i >= 0 && i < slots.length) counts[i].push(aid);
+  const maxc = Math.max(0, Math.max.apply(null, counts.map((c) => c.length).concat([0])));
+  const mineSet = {}; if (me && av[me.id]) av[me.id].slots.forEach((i) => { mineSet[i] = 1; });
+  const card = document.createElement('div'); card.className = 'sched-card';
+  const head = document.createElement('div'); head.className = 'sched-head'; head.textContent = '📅 ' + (sc.title || '');
+  card.appendChild(head);
+  if (sc.due) { const d = document.createElement('div'); d.className = 'intake-due'; d.textContent = (sc.due < Date.now() ? '⛔ 마감됨: ' : '⏰ 마감: ') + fmtDue(sc.due); card.appendChild(d); }
+  if (maxc > 0) {
+    const best = []; counts.forEach((c, i) => { if (c.length === maxc) best.push(slots[i]); });
+    const b = document.createElement('div'); b.className = 'sched-best'; b.textContent = '✅ 최적 시간: ' + best.join(', ') + ' (' + maxc + '명 가능)';
+    card.appendChild(b);
+  }
+  slots.forEach((label, i) => {
+    const cnt = counts[i].length;
+    const row = document.createElement('button'); row.type = 'button';
+    row.className = 'sched-slot' + (mineSet[i] ? ' mine' : '') + (cnt === maxc && maxc > 0 ? ' best' : '');
+    const bar = document.createElement('span'); bar.className = 'sched-bar'; bar.style.width = (maxc ? Math.round(cnt / maxc * 100) : 0) + '%';
+    const lab = document.createElement('span'); lab.className = 'sched-slot-label'; lab.textContent = (mineSet[i] ? '☑ ' : '☐ ') + label;
+    const num = document.createElement('span'); num.className = 'sched-slot-count'; num.textContent = cnt + '명';
+    row.appendChild(bar); row.appendChild(lab); row.appendChild(num);
+    if (counts[i].length) row.title = counts[i].map((aid) => knownUser(aid).name).join(', ');
+    row.onclick = () => toggleAvail(m.id, i);
+    card.appendChild(row);
+  });
+  const status = document.createElement('div'); status.className = 'intake-status';
+  status.textContent = missing.length
+    ? ('응답 ' + responders.length + ' / ' + all.length + ' · 미응답: ' + missing.slice(0, 8).map((u) => u.name).join(', ') + (missing.length > 8 ? (' 외 ' + (missing.length - 8) + '명') : ''))
+    : ('응답 ' + responders.length + ' / ' + all.length + ' · 전원 응답 완료 ✅');
+  card.appendChild(status);
+  return card;
+}
+function toggleAvail(schedId, slotIdx) {
+  const m = recs[schedId]; if (!m || !m.sched) return;
+  const av = _avail[schedId] || {};
+  const mine = (me && av[me.id]) ? av[me.id].slots.slice() : [];
+  const pos = mine.indexOf(slotIdx);
+  if (pos === -1) mine.push(slotIdx); else mine.splice(pos, 1);
+  socket.emit('avail', { target: schedId, slots: mine });
+}
+function openSchedModal() {
+  if (cur.topic == null) { alert('일정 조율은 주제나 1:1 대화를 먼저 연 뒤 만들 수 있어요.'); return; }
+  $('sched-title').value = ''; $('sched-due').value = ''; $('sched-dt').value = ''; schedSlotsEl.innerHTML = '';
+  schedModal.classList.remove('hidden'); $('sched-title').focus();
+}
+function addSchedSlot() {
+  const v = $('sched-dt').value; if (!v || schedSlotsEl.children.length >= 50) return;
+  const label = fmtSlotLabel(v);
+  for (const c of schedSlotsEl.children) if (c.dataset.label === label) return;
+  const chip = document.createElement('span'); chip.className = 'sched-slot-chip'; chip.dataset.label = label;
+  chip.textContent = label;
+  const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕'; x.onclick = () => chip.remove();
+  chip.appendChild(x); schedSlotsEl.appendChild(chip);
+}
+if (schedBtn) {
+  schedBtn.onclick = openSchedModal;
+  $('sched-add').onclick = addSchedSlot;
+  $('sched-dt').addEventListener('change', addSchedSlot);
+  $('sched-close').onclick = () => schedModal.classList.add('hidden');
+  $('sched-cancel').onclick = () => schedModal.classList.add('hidden');
+  schedModal.addEventListener('click', (e) => { if (e.target === schedModal) schedModal.classList.add('hidden'); });
+  $('sched-create').onclick = () => {
+    const title = $('sched-title').value.trim();
+    if (!title) { alert('제목을 입력하세요.'); return; }
+    const slots = [].map.call(schedSlotsEl.children, (c) => c.dataset.label);
+    if (slots.length < 2) { alert('후보 시간대를 2개 이상 추가하세요.'); return; }
+    const sched = { title: title, slots: slots };
+    const dv = $('sched-due').value; if (dv) { const t = Date.parse(dv); if (t) sched.due = t; }
+    socket.emit('send', { channel: cur.channel, topic: cur.topic, text: '', sched: sched });
+    schedModal.classList.add('hidden');
   };
 }
 

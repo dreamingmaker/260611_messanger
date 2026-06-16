@@ -35,6 +35,8 @@
 | `react` | 이모지 리액션 | `target, emoji, dm?` (토글=패리티) |
 | `vote` | 투표 응답 | `target, opt, dm?` (단일=최신/복수=패리티) |
 | `submit` | 수합 제출 | `target, text/opt, dm?` (사람당 최신) |
+| `sched` | 일정 조율(msg 내 필드) | `title, slots[]` |
+| `avail` | 일정 가용응답 | `target, slots[](index), dm?` (사람당 최신) |
 | `docver` | 문서함 버전 | `docId, ver, title, note, file{...}, text(diff용)` |
 
 ### 전파 규칙 — `audienceOf(rec)`
@@ -97,7 +99,6 @@ node_modules 까지 포함(받는 사람이 npm install 불필요), 엔트리는
 
 ## 로드맵(다음 단계 후보)
 - **문서 diff 확장**: 현재 `.hwpx/.docx/텍스트`만 내용(+/-) 비교. **구형 `.hwp`(바이너리) diff** 는 미지원 → 파서/변환 필요.
-- **일정 조율(when2meet)**: 가용시간 수합 → 공통시간 자동 도출(수합 엔진 확장).
 - **작업/담당 추적**: 액션아이템에 담당자·상태·마감.
 - **읽음/확인(ack) 추적**: "누가 봤나/확인했나".
 - **권한·역할**: 채널 리셋/삭제 등 통제(현재는 누구나 자기 글만).
