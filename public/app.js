@@ -46,7 +46,7 @@ const summaryModal = $('summary-modal'), summaryTitle = $('summary-title'), summ
 let lastRead = {};
 try { lastRead = JSON.parse(localStorage.getItem('p2p.lastRead') || '{}'); } catch (e) { lastRead = {}; }
 function saveLastRead() { try { localStorage.setItem('p2p.lastRead', JSON.stringify(lastRead)); } catch (e) {} }
-let _edits = {}, _reactions = {}, _votes = {}, _submits = {}, _avail = {}, _taskstat = {}, mentionFlags = {};
+let _edits = {}, _reactions = {}, _votes = {}, _submits = {}, _avail = {}, _taskstat = {}, _acks = {}, mentionFlags = {};
 const typingUsers = new Map();
 
 // ====================================================================
@@ -222,6 +222,26 @@ function buildTaskStat() {
   }
   return out;
 }
+// 확인(ACK) 집계: target -> Set(확인한 authorId). 토글 패리티(홀수=확인)
+function buildAcks() {
+  const cnt = {};
+  for (const r of Object.values(recs)) {
+    if (r.type !== 'ack' || !r.author || !recs[r.target]) continue;
+    const t = cnt[r.target] || (cnt[r.target] = {});
+    t[r.author.id] = (t[r.author.id] || 0) + 1;
+  }
+  const m = {};
+  for (const target in cnt) { const s = new Set(); for (const aid in cnt[target]) if (cnt[target][aid] % 2 === 1) s.add(aid); if (s.size) m[target] = s; }
+  return m;
+}
+function ackTitle(m, acks) {
+  const exp = isDMChannel(m.channel) ? m.channel.slice(3).split('|').map(knownUser) : roster();
+  const did = exp.filter((u) => acks.has(u.id)).map((u) => u.name);
+  const not = exp.filter((u) => !acks.has(u.id) && !(m.author && u.id === m.author.id)).map((u) => u.name);
+  let s = '확인: ' + (did.join(', ') || '없음');
+  if (not.length) s += '  ·  미확인: ' + not.join(', ');
+  return s;
+}
 // 주제별 리셋 기준 시각: key(채널,주제) -> 최대 reset.ts. 이 시각 이하(<=)의 메시지는 숨긴다
 function buildResets() {
   const m = {};
@@ -341,7 +361,7 @@ socket.on('record', (r) => {
   if (r.type === 'msg') onMsg(r);
   else if (r.type === 'del') onDelete(r);
   else if (r.type === 'reset') onReset(r);
-  else if (r.type === 'react' || r.type === 'edit' || r.type === 'vote' || r.type === 'submit' || r.type === 'avail' || r.type === 'taskstat') rerenderIfCurrent(r.target);
+  else if (r.type === 'react' || r.type === 'edit' || r.type === 'vote' || r.type === 'submit' || r.type === 'avail' || r.type === 'taskstat' || r.type === 'ack') rerenderIfCurrent(r.target);
   else if (r.type === 'user') { if (me) { renderUsers(); renderSidebar(); } } // 명부 갱신(오프라인 이름 표시)
   else if (r.type === 'docver') { if (docsModal && !docsModal.classList.contains('hidden')) { if (_openDocId) openDocDetail(_openDocId); else renderDocsList(); } }
   else if (r.type === 'channel') { /* channels 이벤트로 갱신됨 */ }
@@ -609,7 +629,7 @@ function openDM(partnerId) {
 
 function renderThread() {
   view.msgs = msgsOf(cur.channel, cur.topic);
-  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail(); _taskstat = buildTaskStat();
+  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail(); _taskstat = buildTaskStat(); _acks = buildAcks();
   messages.innerHTML = '';
   if (!view.msgs.length) {
     const emptyMsg = isDMChannel(cur.channel)
@@ -624,7 +644,7 @@ function renderThread() {
 }
 function appendMsg(m) {
   if (!view.msgs.length) messages.innerHTML = '';
-  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail(); _taskstat = buildTaskStat();
+  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail(); _taskstat = buildTaskStat(); _acks = buildAcks();
   const prev = view.msgs[view.msgs.length - 1] || null;
   view.msgs.push(m);
   appendOne(m, prev);
@@ -689,6 +709,16 @@ function appendOne(m, prev) {
     }
     body.appendChild(row);
   }
+  const acks = _acks[m.id];
+  if (acks && acks.size) {
+    const arow = document.createElement('div'); arow.className = 'ack-row';
+    const chip = document.createElement('button'); chip.type = 'button';
+    chip.className = 'ack-chip' + (me && acks.has(me.id) ? ' mine' : '');
+    chip.textContent = '✓ ' + acks.size + ' 확인';
+    chip.title = ackTitle(m, acks);
+    chip.onclick = () => socket.emit('ack', { target: m.id });
+    arow.appendChild(chip); body.appendChild(arow);
+  }
   wrap.appendChild(body);
   wrap.dataset.id = m.id;
   const ctrl = document.createElement('div'); ctrl.className = 'msg-ctrl';
@@ -696,6 +726,10 @@ function appendOne(m, prev) {
   addRx.type = 'button'; addRx.className = 'msg-ctrl-btn'; addRx.title = '리액션'; addRx.textContent = '😊';
   addRx.onclick = (e) => { e.stopPropagation(); openReactionPicker(addRx, m.id); };
   ctrl.appendChild(addRx);
+  const ackBtn = document.createElement('button');
+  ackBtn.type = 'button'; ackBtn.className = 'msg-ctrl-btn' + (me && _acks[m.id] && _acks[m.id].has(me.id) ? ' on' : ''); ackBtn.title = '확인했음'; ackBtn.textContent = '✓';
+  ackBtn.onclick = (e) => { e.stopPropagation(); socket.emit('ack', { target: m.id }); };
+  ctrl.appendChild(ackBtn);
   if (mine && (m.text || _edits[m.id])) {
     const ebtn = document.createElement('button');
     ebtn.type = 'button'; ebtn.className = 'msg-ctrl-btn'; ebtn.title = '수정'; ebtn.textContent = '✏';

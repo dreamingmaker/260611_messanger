@@ -430,6 +430,16 @@ io.on('connection', (socket) => {
     publish(newRecord(rec));
   });
 
+  // 확인(ACK): 메시지 "확인했음" 표시(토글=패리티). 누가 확인/미확인인지 추적
+  socket.on('ack', ({ target } = {}) => {
+    if (!identity.name || typeof target !== 'string') return;
+    const t = store.records[target];
+    if (!t || t.type !== 'msg') return;
+    const rec = { type: 'ack', target: target, author: { id: myId, name: identity.name } };
+    if (typeof t.channel === 'string' && t.channel.indexOf('dm:') === 0) rec.dm = t.channel;
+    publish(newRecord(rec));
+  });
+
   // 문서함: 새 문서/새 버전 업로드(임베드 → 전원 복제로 durable). 버전번호 자동 증가. text=diff용 추출 텍스트
   socket.on('docpost', ({ docId, title, note, file, text } = {}) => {
     if (!identity.name) return;
@@ -471,7 +481,7 @@ function newRecord(fields) {
 // record 수신 대상: null=공개(전체 전파), 배열=해당 참여자 id 에게만(DM 등)
 function audienceOf(rec) {
   if (rec.type === 'msg' && typeof rec.channel === 'string' && rec.channel.indexOf('dm:') === 0) return rec.channel.slice(3).split('|');
-  if ((rec.type === 'del' || rec.type === 'react' || rec.type === 'edit' || rec.type === 'vote' || rec.type === 'submit' || rec.type === 'avail' || rec.type === 'taskstat') && typeof rec.dm === 'string' && rec.dm.indexOf('dm:') === 0) return rec.dm.slice(3).split('|');
+  if ((rec.type === 'del' || rec.type === 'react' || rec.type === 'edit' || rec.type === 'vote' || rec.type === 'submit' || rec.type === 'avail' || rec.type === 'taskstat' || rec.type === 'ack') && typeof rec.dm === 'string' && rec.dm.indexOf('dm:') === 0) return rec.dm.slice(3).split('|');
   return null;
 }
 // 내가 만든 record 를 저장 + UI + 전파(공개=전체, DM=당사자에게만)
@@ -507,6 +517,8 @@ function ingest(rec, sourcePeerId, live) {
     if (typeof rec.target !== 'string' || !Array.isArray(rec.slots)) return false;
   } else if (rec.type === 'taskstat') {
     if (typeof rec.target !== 'string' || typeof rec.status !== 'string') return false;
+  } else if (rec.type === 'ack') {
+    if (typeof rec.target !== 'string') return false;
   } else if (rec.type === 'docver') {
     if (typeof rec.docId !== 'string' || !rec.file || typeof rec.file.data !== 'string') return false;
   } else if (rec.type === 'user') {
@@ -515,7 +527,7 @@ function ingest(rec, sourcePeerId, live) {
   } else return false;
   let aud = audienceOf(rec);
   // del/edit/react 는 자칭 dm 을 신뢰하지 않고 "대상 메시지" 기준으로 권한·수신대상 검증/정규화
-  if (rec.type === 'del' || rec.type === 'edit' || rec.type === 'react' || rec.type === 'vote' || rec.type === 'submit' || rec.type === 'avail' || rec.type === 'taskstat') {
+  if (rec.type === 'del' || rec.type === 'edit' || rec.type === 'react' || rec.type === 'vote' || rec.type === 'submit' || rec.type === 'avail' || rec.type === 'taskstat' || rec.type === 'ack') {
     const tgt = store.records[rec.target];
     if (!tgt || tgt.type !== 'msg') return false; // 대상 없으면 거부(이후 동기화로 재수신 — 자가복구)
     if (rec.type === 'vote' && !tgt.poll) return false; // 투표는 투표 메시지에만
