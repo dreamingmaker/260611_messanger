@@ -46,7 +46,7 @@ const summaryModal = $('summary-modal'), summaryTitle = $('summary-title'), summ
 let lastRead = {};
 try { lastRead = JSON.parse(localStorage.getItem('p2p.lastRead') || '{}'); } catch (e) { lastRead = {}; }
 function saveLastRead() { try { localStorage.setItem('p2p.lastRead', JSON.stringify(lastRead)); } catch (e) {} }
-let _edits = {}, _reactions = {}, _votes = {}, _submits = {}, _avail = {}, mentionFlags = {};
+let _edits = {}, _reactions = {}, _votes = {}, _submits = {}, _avail = {}, _taskstat = {}, mentionFlags = {};
 const typingUsers = new Map();
 
 // ====================================================================
@@ -209,6 +209,19 @@ function buildAvail() {
   }
   return out;
 }
+// 작업 진행상태 집계: target -> { authorId -> 최신 taskstat }
+function buildTaskStat() {
+  const out = {};
+  for (const r of Object.values(recs)) {
+    if (r.type !== 'taskstat' || !r.author) continue;
+    const t = recs[r.target];
+    if (!t || !t.task) continue;
+    const b = out[r.target] || (out[r.target] = {});
+    const cur = b[r.author.id];
+    if (!cur || r.ts > cur.ts || (r.ts === cur.ts && (r.lc || 0) > (cur.lc || 0))) b[r.author.id] = r;
+  }
+  return out;
+}
 // 주제별 리셋 기준 시각: key(채널,주제) -> 최대 reset.ts. 이 시각 이하(<=)의 메시지는 숨긴다
 function buildResets() {
   const m = {};
@@ -328,7 +341,7 @@ socket.on('record', (r) => {
   if (r.type === 'msg') onMsg(r);
   else if (r.type === 'del') onDelete(r);
   else if (r.type === 'reset') onReset(r);
-  else if (r.type === 'react' || r.type === 'edit' || r.type === 'vote' || r.type === 'submit' || r.type === 'avail') rerenderIfCurrent(r.target);
+  else if (r.type === 'react' || r.type === 'edit' || r.type === 'vote' || r.type === 'submit' || r.type === 'avail' || r.type === 'taskstat') rerenderIfCurrent(r.target);
   else if (r.type === 'user') { if (me) { renderUsers(); renderSidebar(); } } // 명부 갱신(오프라인 이름 표시)
   else if (r.type === 'docver') { if (docsModal && !docsModal.classList.contains('hidden')) { if (_openDocId) openDocDetail(_openDocId); else renderDocsList(); } }
   else if (r.type === 'channel') { /* channels 이벤트로 갱신됨 */ }
@@ -596,7 +609,7 @@ function openDM(partnerId) {
 
 function renderThread() {
   view.msgs = msgsOf(cur.channel, cur.topic);
-  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail();
+  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail(); _taskstat = buildTaskStat();
   messages.innerHTML = '';
   if (!view.msgs.length) {
     const emptyMsg = isDMChannel(cur.channel)
@@ -611,7 +624,7 @@ function renderThread() {
 }
 function appendMsg(m) {
   if (!view.msgs.length) messages.innerHTML = '';
-  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail();
+  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail(); _taskstat = buildTaskStat();
   const prev = view.msgs[view.msgs.length - 1] || null;
   view.msgs.push(m);
   appendOne(m, prev);
@@ -659,6 +672,7 @@ function appendOne(m, prev) {
   if (m.poll) bubble.appendChild(renderPollCard(m));
   if (m.intake) bubble.appendChild(renderIntakeCard(m));
   if (m.sched) bubble.appendChild(renderSchedCard(m));
+  if (m.task) bubble.appendChild(renderTaskCard(m));
   body.appendChild(bubble);
   const card = bubble.querySelector('.file-card');
   if (card && m.file) card.onclick = () => downloadFile(m.file);
@@ -1305,6 +1319,77 @@ if (intakeBtn) {
     const dv = $('intake-due').value; if (dv) { const t = Date.parse(dv); if (t) intake.due = t; }
     socket.emit('send', { channel: cur.channel, topic: cur.topic, text: '', intake: intake });
     intakeModal.classList.add('hidden');
+  };
+}
+
+// ====================================================================
+// 작업/담당 추적 (Task)
+// ====================================================================
+const TASK_LABELS = { todo: '할 일', doing: '진행 중', done: '완료' };
+const taskModal = $('task-modal'), taskBtn = $('task-btn'), taskAsgEl = $('task-asg-list');
+function renderTaskCard(m) {
+  const tk = m.task || {};
+  const stats = _taskstat[m.id] || {};
+  const ids = [];
+  (tk.assignees || []).forEach((id) => { if (ids.indexOf(id) === -1) ids.push(id); });
+  Object.keys(stats).forEach((id) => { if (ids.indexOf(id) === -1) ids.push(id); });
+  const statusOf = (id) => (stats[id] ? stats[id].status : 'todo');
+  const doneCount = ids.filter((id) => statusOf(id) === 'done').length;
+  const card = document.createElement('div'); card.className = 'task-card';
+  const head = document.createElement('div'); head.className = 'task-head';
+  head.textContent = (ids.length && doneCount === ids.length ? '✅ ' : '📋 ') + (tk.title || '');
+  card.appendChild(head);
+  if (tk.desc) { const d = document.createElement('div'); d.className = 'task-desc'; d.textContent = tk.desc; card.appendChild(d); }
+  if (tk.due) { const d = document.createElement('div'); d.className = 'intake-due'; d.textContent = (tk.due < Date.now() ? '⛔ 기한 지남: ' : '⏰ 기한: ') + fmtDue(tk.due); card.appendChild(d); }
+  ids.forEach((id) => {
+    const u = knownUser(id); const st = statusOf(id);
+    const row = document.createElement('div'); row.className = 'task-asg';
+    const nm = document.createElement('span'); nm.className = 'task-asg-name'; nm.textContent = u.name;
+    const badge = document.createElement('span'); badge.className = 'task-badge ts-' + st; badge.textContent = TASK_LABELS[st] || st;
+    row.appendChild(nm); row.appendChild(badge); card.appendChild(row);
+  });
+  const wrap = document.createElement('div'); wrap.className = 'task-mine-wrap';
+  const lbl = document.createElement('span'); lbl.className = 'task-mine-lbl'; lbl.textContent = '내 상태:';
+  const mineBar = document.createElement('div'); mineBar.className = 'task-mine';
+  const myst = me ? statusOf(me.id) : 'todo';
+  ['todo', 'doing', 'done'].forEach((s) => {
+    const b = document.createElement('button'); b.type = 'button';
+    b.className = 'task-set ts-' + s + (me && myst === s ? ' on' : ''); b.textContent = TASK_LABELS[s];
+    b.onclick = () => socket.emit('taskstat', { target: m.id, status: s });
+    mineBar.appendChild(b);
+  });
+  wrap.appendChild(lbl); wrap.appendChild(mineBar); card.appendChild(wrap);
+  const foot = document.createElement('div'); foot.className = 'intake-status';
+  foot.textContent = ids.length ? ('완료 ' + doneCount + ' / ' + ids.length) : '담당자 없음 (각자 내 상태로 참여)';
+  card.appendChild(foot);
+  return card;
+}
+function openTaskModal() {
+  if (cur.topic == null) { alert('작업은 주제나 1:1 대화를 먼저 연 뒤 만들 수 있어요.'); return; }
+  $('task-title').value = ''; $('task-desc').value = ''; $('task-due').value = '';
+  const cands = isDMChannel(cur.channel) ? cur.channel.slice(3).split('|').map(knownUser) : roster();
+  taskAsgEl.innerHTML = '';
+  cands.forEach((u) => {
+    const lab = document.createElement('label'); lab.className = 'task-asg-pick';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = u.id;
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(' ' + u.name));
+    taskAsgEl.appendChild(lab);
+  });
+  taskModal.classList.remove('hidden'); $('task-title').focus();
+}
+if (taskBtn) {
+  taskBtn.onclick = openTaskModal;
+  $('task-close').onclick = () => taskModal.classList.add('hidden');
+  $('task-cancel').onclick = () => taskModal.classList.add('hidden');
+  taskModal.addEventListener('click', (e) => { if (e.target === taskModal) taskModal.classList.add('hidden'); });
+  $('task-create').onclick = () => {
+    const title = $('task-title').value.trim();
+    if (!title) { alert('제목을 입력하세요.'); return; }
+    const assignees = [].slice.call(taskAsgEl.querySelectorAll('input:checked')).map((c) => c.value);
+    const task = { title: title, desc: $('task-desc').value.trim(), assignees: assignees };
+    const dv = $('task-due').value; if (dv) { const t = Date.parse(dv); if (t) task.due = t; }
+    socket.emit('send', { channel: cur.channel, topic: cur.topic, text: '', task: task });
+    taskModal.classList.add('hidden');
   };
 }
 

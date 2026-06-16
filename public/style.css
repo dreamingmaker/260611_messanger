@@ -436,6 +436,30 @@ mark { background: #ffe9a8; padding: 0 1px; }
 #intake-prompt { border: 1.5px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; resize: vertical; outline: none; width: 100%; box-sizing: border-box; }
 #intake-due { border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
 
+/* 작업/담당 추적 */
+.task-card { margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: #fbfcfe; min-width: 260px; color: var(--text); }
+.msg.mine .task-card { background: rgba(255,255,255,.95); border-color: rgba(255,255,255,.5); }
+.task-head { font-weight: 700; }
+.task-desc { font-size: 13px; margin-top: 3px; white-space: pre-wrap; }
+.task-asg { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.task-asg-name { font-weight: 500; }
+.task-badge { font-size: 11px; border-radius: 10px; padding: 2px 8px; }
+.ts-todo { background: #eceff3; color: #555; }
+.ts-doing { background: #fff3cd; color: #8a6d3b; }
+.ts-done { background: #e6ffec; color: #114b22; }
+.task-mine-wrap { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.task-mine-lbl { font-size: 12px; color: var(--muted); }
+.task-mine { display: flex; gap: 4px; }
+.task-set { border: 1px solid var(--border); background: #fff; border-radius: 8px; padding: 3px 9px; font-size: 12px; cursor: pointer; }
+.task-set:hover { border-color: var(--accent); }
+.task-set.on { border-color: var(--accent); font-weight: 700; }
+.task-set.ts-done.on { background: #e6ffec; }
+.task-set.ts-doing.on { background: #fff3cd; }
+.task-set.ts-todo.on { background: #eceff3; }
+.task-asg-label { font-size: 12px; color: var(--muted); }
+.task-asg-list { display: flex; flex-wrap: wrap; gap: 8px; max-height: 140px; overflow: auto; }
+.task-asg-pick { font-size: 13px; display: flex; align-items: center; gap: 4px; cursor: pointer; border: 1px solid var(--border); border-radius: 8px; padding: 3px 8px; }
+
 /* 일정 조율 (when2meet) */
 .sched-card { margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: #fbfcfe; min-width: 260px; color: var(--text); }
 .msg.mine .sched-card { background: rgba(255,255,255,.95); border-color: rgba(255,255,255,.5); }

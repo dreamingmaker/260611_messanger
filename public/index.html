@@ -83,6 +83,7 @@
         <button type="button" id="poll-btn" class="icon-btn" title="투표 만들기">📊</button>
         <button type="button" id="intake-btn" class="icon-btn" title="수합(설문/제출) 만들기">📥</button>
         <button type="button" id="sched-btn" class="icon-btn" title="일정 조율(가능시간 모으기)">📅</button>
+        <button type="button" id="task-btn" class="icon-btn" title="작업/담당 만들기">📋</button>
         <textarea id="msg-input" class="msg-input" rows="1" placeholder="메시지를 입력하세요…" maxlength="4000"></textarea>
         <button type="submit" id="send-btn" class="btn-send" title="전송">전송</button>
         <div id="emoji-pop" class="emoji-pop hidden"></div>
@@ -116,6 +117,24 @@
         <div class="poll-actions">
           <button type="button" id="poll-create" class="ub-btn">만들기</button>
           <button type="button" id="poll-cancel" class="ub-btn ghost">취소</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 작업 만들기 모달 -->
+  <div id="task-modal" class="modal-overlay hidden">
+    <div class="summary-box poll-box">
+      <div class="summary-head"><b>📋 작업 만들기</b><button type="button" id="task-close" class="icon-btn" title="닫기">✕</button></div>
+      <div class="poll-form">
+        <input id="task-title" type="text" placeholder="할 일 (예: 9월 보고서 3장 작성)" maxlength="200" autocomplete="off" />
+        <textarea id="task-desc" placeholder="설명(선택)" maxlength="1000" rows="2"></textarea>
+        <div class="task-asg-label">담당자(선택 — 없으면 각자 참여)</div>
+        <div id="task-asg-list" class="task-asg-list"></div>
+        <label class="intake-duerow">기한(선택) <input id="task-due" type="datetime-local" /></label>
+        <div class="poll-actions">
+          <button type="button" id="task-create" class="ub-btn">만들기</button>
+          <button type="button" id="task-cancel" class="ub-btn ghost">취소</button>
         </div>
       </div>
     </div>
