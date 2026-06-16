@@ -46,7 +46,7 @@ const summaryModal = $('summary-modal'), summaryTitle = $('summary-title'), summ
 let lastRead = {};
 try { lastRead = JSON.parse(localStorage.getItem('p2p.lastRead') || '{}'); } catch (e) { lastRead = {}; }
 function saveLastRead() { try { localStorage.setItem('p2p.lastRead', JSON.stringify(lastRead)); } catch (e) {} }
-let _edits = {}, _reactions = {}, _votes = {}, _submits = {}, _avail = {}, _taskstat = {}, _acks = {}, mentionFlags = {};
+let _edits = {}, _reactions = {}, _votes = {}, _submits = {}, _avail = {}, _taskstat = {}, _acks = {}, _pins = new Set(), mentionFlags = {};
 const typingUsers = new Map();
 
 // ====================================================================
@@ -234,6 +234,18 @@ function buildAcks() {
   for (const target in cnt) { const s = new Set(); for (const aid in cnt[target]) if (cnt[target][aid] % 2 === 1) s.add(aid); if (s.size) m[target] = s; }
   return m;
 }
+// 핀(고정) 집계: 고정된 message id 의 Set (한 명이라도 홀수번 고정 → 고정)
+function buildPins() {
+  const cnt = {};
+  for (const r of Object.values(recs)) {
+    if (r.type !== 'pin' || !r.author || !recs[r.target]) continue;
+    const t = cnt[r.target] || (cnt[r.target] = {});
+    t[r.author.id] = (t[r.author.id] || 0) + 1;
+  }
+  const s = new Set();
+  for (const target in cnt) { let any = false; for (const aid in cnt[target]) if (cnt[target][aid] % 2 === 1) any = true; if (any) s.add(target); }
+  return s;
+}
 function ackTitle(m, acks) {
   const exp = isDMChannel(m.channel) ? m.channel.slice(3).split('|').map(knownUser) : roster();
   const did = exp.filter((u) => acks.has(u.id)).map((u) => u.name);
@@ -361,7 +373,7 @@ socket.on('record', (r) => {
   if (r.type === 'msg') onMsg(r);
   else if (r.type === 'del') onDelete(r);
   else if (r.type === 'reset') onReset(r);
-  else if (r.type === 'react' || r.type === 'edit' || r.type === 'vote' || r.type === 'submit' || r.type === 'avail' || r.type === 'taskstat' || r.type === 'ack') rerenderIfCurrent(r.target);
+  else if (r.type === 'react' || r.type === 'edit' || r.type === 'vote' || r.type === 'submit' || r.type === 'avail' || r.type === 'taskstat' || r.type === 'ack' || r.type === 'pin') rerenderIfCurrent(r.target);
   else if (r.type === 'user') { if (me) { renderUsers(); renderSidebar(); } } // 명부 갱신(오프라인 이름 표시)
   else if (r.type === 'docver') { if (docsModal && !docsModal.classList.contains('hidden')) { if (_openDocId) openDocDetail(_openDocId); else renderDocsList(); } }
   else if (r.type === 'channel') { /* channels 이벤트로 갱신됨 */ }
@@ -507,8 +519,9 @@ function updateCrumb() {
     const on = peers.some((p) => p.id === u.id);
     crumb.innerHTML = '<span class="c-hash">@</span><span class="c-topic">' + esc(u.name) + '</span>' +
       '<span class="c-sub">' + (on ? '● 접속 중' : '○ 오프라인') + '</span>';
-    headerActions.innerHTML = '<button class="btn-ghost-sm" id="topic-summary">📝 요약</button><button class="btn-ghost-sm" id="topic-export">⬇ 내보내기</button>';
+    headerActions.innerHTML = '<button class="btn-ghost-sm" id="topic-summary">📝 요약</button><button class="btn-ghost-sm" id="topic-pins">📌 고정</button><button class="btn-ghost-sm" id="topic-export">⬇ 내보내기</button>';
     headerActions.querySelector('#topic-summary').onclick = () => summarizeMessages(msgsOf(cur.channel, ''), u.name + ' 님과의 대화 요약');
+    headerActions.querySelector('#topic-pins').onclick = openPins;
     headerActions.querySelector('#topic-export').onclick = exportTopicTxt;
     return;
   }
@@ -522,8 +535,9 @@ function updateCrumb() {
       '<span class="c-channel">' + esc(channelName(cur.channel)) + '</span>' +
       '<span class="c-sep">›</span><span class="c-topic">' + esc(cur.topic) + '</span>';
     crumb.querySelector('.c-back').onclick = () => selectChannel(cur.channel);
-    headerActions.innerHTML = '<button class="btn-ghost-sm" id="topic-summary">📝 요약</button><button class="btn-ghost-sm" id="topic-export">⬇ 내보내기</button><button class="btn-ghost-sm" id="topic-reset">⟳ 주제 리셋</button>';
+    headerActions.innerHTML = '<button class="btn-ghost-sm" id="topic-summary">📝 요약</button><button class="btn-ghost-sm" id="topic-pins">📌 고정</button><button class="btn-ghost-sm" id="topic-export">⬇ 내보내기</button><button class="btn-ghost-sm" id="topic-reset">⟳ 주제 리셋</button>';
     headerActions.querySelector('#topic-summary').onclick = () => summarizeMessages(msgsOf(cur.channel, cur.topic), '“' + cur.topic + '” 주제 요약');
+    headerActions.querySelector('#topic-pins').onclick = openPins;
     headerActions.querySelector('#topic-export').onclick = exportTopicTxt;
     headerActions.querySelector('#topic-reset').onclick = () => {
       if (confirm('“' + cur.topic + '” 주제의 이전 대화를 모두 리셋할까요?\\n모든 동료에게서 이 주제의 과거 메시지가 사라집니다. (되돌릴 수 없음)')) socket.emit('resetTopic', { channel: cur.channel, topic: cur.topic });
@@ -629,7 +643,7 @@ function openDM(partnerId) {
 
 function renderThread() {
   view.msgs = msgsOf(cur.channel, cur.topic);
-  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail(); _taskstat = buildTaskStat(); _acks = buildAcks();
+  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail(); _taskstat = buildTaskStat(); _acks = buildAcks(); _pins = buildPins();
   messages.innerHTML = '';
   if (!view.msgs.length) {
     const emptyMsg = isDMChannel(cur.channel)
@@ -644,7 +658,7 @@ function renderThread() {
 }
 function appendMsg(m) {
   if (!view.msgs.length) messages.innerHTML = '';
-  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail(); _taskstat = buildTaskStat(); _acks = buildAcks();
+  _edits = buildEdits(); _reactions = buildReactions(); _votes = buildVotes(); _submits = buildSubmits(); _avail = buildAvail(); _taskstat = buildTaskStat(); _acks = buildAcks(); _pins = buildPins();
   const prev = view.msgs[view.msgs.length - 1] || null;
   view.msgs.push(m);
   appendOne(m, prev);
@@ -726,6 +740,11 @@ function appendOne(m, prev) {
     chip.onclick = () => socket.emit('ack', { target: m.id });
     arow.appendChild(chip); body.appendChild(arow);
   }
+  if (_pins.has(m.id)) {
+    const prow = document.createElement('div'); prow.className = 'pin-row';
+    const pc = document.createElement('span'); pc.className = 'pin-chip'; pc.textContent = '📌 고정됨';
+    prow.appendChild(pc); body.appendChild(prow);
+  }
   wrap.appendChild(body);
   wrap.dataset.id = m.id;
   const ctrl = document.createElement('div'); ctrl.className = 'msg-ctrl';
@@ -741,6 +760,10 @@ function appendOne(m, prev) {
   reBtn.type = 'button'; reBtn.className = 'msg-ctrl-btn'; reBtn.title = '답글'; reBtn.textContent = '↩';
   reBtn.onclick = (e) => { e.stopPropagation(); setReplyTarget(m); };
   ctrl.appendChild(reBtn);
+  const pinBtn = document.createElement('button');
+  pinBtn.type = 'button'; pinBtn.className = 'msg-ctrl-btn' + (_pins.has(m.id) ? ' on' : ''); pinBtn.title = '고정'; pinBtn.textContent = '📌';
+  pinBtn.onclick = (e) => { e.stopPropagation(); socket.emit('pin', { target: m.id }); };
+  ctrl.appendChild(pinBtn);
   if (mine && (m.text || _edits[m.id])) {
     const ebtn = document.createElement('button');
     ebtn.type = 'button'; ebtn.className = 'msg-ctrl-btn'; ebtn.title = '수정'; ebtn.textContent = '✏';
@@ -1401,6 +1424,30 @@ function clearReply() { replyTo = null; replyBar.classList.add('hidden'); replyB
 function jumpToMsg(id) {
   const el = messages.querySelector('[data-id="' + id + '"]');
   if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('jump-hl'); setTimeout(() => el.classList.remove('jump-hl'), 1500); }
+}
+
+// ====================================================================
+// 핀(고정) 목록
+// ====================================================================
+const pinsModal = $('pins-modal'), pinsBody = $('pins-body');
+function openPins() {
+  const list = msgsOf(cur.channel, cur.topic).filter((m) => _pins.has(m.id));
+  pinsBody.innerHTML = '';
+  if (!list.length) { pinsBody.innerHTML = '<div class="ov-empty">고정된 메시지가 없습니다. 메시지에 마우스를 올려 📌 로 고정하세요.</div>'; }
+  else list.forEach((m) => {
+    const u = knownUser(m.author ? m.author.id : '');
+    const row = document.createElement('div'); row.className = 'pin-item';
+    const meta = document.createElement('div'); meta.className = 'pin-item-meta'; meta.textContent = u.name + ' · ' + fmtAgo(m.ts);
+    const tx = document.createElement('div'); tx.className = 'pin-item-text'; tx.textContent = msgPreview(m).slice(0, 200);
+    row.appendChild(meta); row.appendChild(tx);
+    row.onclick = () => { pinsModal.classList.add('hidden'); jumpToMsg(m.id); };
+    pinsBody.appendChild(row);
+  });
+  pinsModal.classList.remove('hidden');
+}
+if (pinsModal) {
+  $('pins-close').onclick = () => pinsModal.classList.add('hidden');
+  pinsModal.addEventListener('click', (e) => { if (e.target === pinsModal) pinsModal.classList.add('hidden'); });
 }
 
 // ====================================================================

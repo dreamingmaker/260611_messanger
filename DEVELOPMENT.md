@@ -37,6 +37,11 @@
 | `submit` | 수합 제출 | `target, text/opt, dm?` (사람당 최신) |
 | `sched` | 일정 조율(msg 내 필드) | `title, slots[]` |
 | `avail` | 일정 가용응답 | `target, slots[](index), dm?` (사람당 최신) |
+| `task` | 작업(msg 내 필드) | `title, desc, assignees[], due` |
+| `taskstat` | 작업 진행상태 | `target, status(todo/doing/done), dm?` (사람당 최신) |
+| `ack` | 확인 | `target, dm?` (토글=패리티) |
+| `pin` | 핀(고정) | `target, dm?` (토글=패리티) |
+| (msg.replyTo) | 답글 | `replyTo`=원본 msg id (msg 필드) |
 | `docver` | 문서함 버전 | `docId, ver, title, note, file{...}, text(diff용)` |
 
 ### 전파 규칙 — `audienceOf(rec)`
@@ -99,9 +104,7 @@ node_modules 까지 포함(받는 사람이 npm install 불필요), 엔트리는
 
 ## 로드맵(다음 단계 후보)
 - **문서 diff 확장**: 현재 `.hwpx/.docx/텍스트`만 내용(+/-) 비교. **구형 `.hwp`(바이너리) diff** 는 미지원 → 파서/변환 필요.
-- **작업/담당 추적**: 액션아이템에 담당자·상태·마감.
-- **읽음/확인(ack) 추적**: "누가 봤나/확인했나".
 - **권한·역할**: 채널 리셋/삭제 등 통제(현재는 누구나 자기 글만).
 - **항상 켠 앵커 노드**: 문서·수합의 durability 보강(여전히 P2P).
 - **서명 기반 신원**: 키쌍으로 위조 원천 차단.
-- **오프라인 알림**, **답글/인용**, **핀/북마크**.
+- **오프라인 푸시 알림**(앱 닫혀도 수신), **결정/변경 통합 이력(audit log)**, **구형 .hwp 내용 diff**.
