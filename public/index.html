@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#2b6cb0" />
+  <title>P2P 사내 메신저</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%AC%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+
+  <!-- 로그인 -->
+  <div id="login" class="login-overlay">
+    <form id="login-form" class="login-box" autocomplete="off">
+      <div class="login-logo">💬</div>
+      <h1>P2P 사내 메신저</h1>
+      <p class="login-sub">중앙서버 없이 같은 망에서 직접 연결 · 채널 안의 주제(스레드)</p>
+      <label class="field-label" for="name-input">이름(닉네임)</label>
+      <input id="name-input" type="text" maxlength="20" placeholder="예: 홍길동" required />
+      <div class="color-row">
+        <span class="field-label">내 색상</span>
+        <div id="color-picker" class="color-picker"></div>
+      </div>
+      <button type="submit" class="btn-primary">입장하기</button>
+      <div id="login-error" class="login-error"></div>
+    </form>
+  </div>
+
+  <!-- 메인 -->
+  <div id="app" class="app hidden">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <div id="me-avatar" class="avatar"></div>
+        <div class="me-info">
+          <div id="me-name" class="me-name"></div>
+          <div class="me-status"><span id="conn-dot" class="conn-dot"></span><span id="conn-text">연결 중…</span></div>
+        </div>
+        <button id="docs-btn" class="icon-btn" title="문서함(버전관리)">📁</button>
+        <button id="search-btn" class="icon-btn" title="메시지 검색">🔍</button>
+        <button id="logout-btn" class="icon-btn" title="나가기">⎋</button>
+      </div>
+      <div class="sidebar-scroll">
+        <div class="section">
+          <div class="section-title">
+            <span>채널</span>
+            <button id="add-channel-btn" class="add-btn" title="새 채널 만들기">＋</button>
+          </div>
+          <ul id="channel-list" class="channel-list"></ul>
+        </div>
+        <div class="section">
+          <div class="section-title"><span>다이렉트 메시지</span></div>
+          <ul id="dm-list" class="channel-list"></ul>
+        </div>
+        <div class="section">
+          <div class="section-title"><span>접속 중 <span id="peer-count" class="count">0</span></span></div>
+          <ul id="user-list" class="user-list"></ul>
+        </div>
+      </div>
+    </aside>
+
+    <main class="chat">
+      <header class="chat-header">
+        <button id="menu-btn" class="icon-btn menu-btn" title="메뉴">☰</button>
+        <div id="crumb" class="crumb"></div>
+        <div id="header-actions" class="header-actions"></div>
+      </header>
+
+      <!-- 채널 개요(주제 목록) -->
+      <div id="overview" class="overview hidden"></div>
+
+      <!-- 주제 스레드 -->
+      <div id="messages" class="messages hidden"></div>
+      <div id="drop-overlay" class="drop-overlay hidden"><div class="drop-inner">📎 여기에 파일·이미지를 놓아 공유</div></div>
+      <div id="unread-bar" class="unread-bar hidden"></div>
+      <div id="typing-bar" class="typing-bar hidden"></div>
+      <form id="composer" class="composer hidden">
+        <button type="button" id="img-btn" class="icon-btn" title="이미지 보내기">🖼️</button>
+        <input type="file" id="img-input" accept="image/*" multiple hidden />
+        <button type="button" id="file-btn" class="icon-btn" title="파일 보내기 (zip 등)">📎</button>
+        <input type="file" id="file-input" multiple hidden />
+        <button type="button" id="emoji-btn" class="icon-btn" title="이모지">😊</button>
+        <button type="button" id="poll-btn" class="icon-btn" title="투표 만들기">📊</button>
+        <button type="button" id="intake-btn" class="icon-btn" title="수합(설문/제출) 만들기">📥</button>
+        <textarea id="msg-input" class="msg-input" rows="1" placeholder="메시지를 입력하세요…" maxlength="4000"></textarea>
+        <button type="submit" id="send-btn" class="btn-send" title="전송">전송</button>
+        <div id="emoji-pop" class="emoji-pop hidden"></div>
+      </form>
+    </main>
+
+    <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
+  </div>
+
+  <!-- 모달(새 채널 / 새 주제) -->
+  <div id="modal" class="modal-overlay hidden">
+    <form id="modal-form" class="modal-box">
+      <h3 id="modal-title">새 채널 만들기</h3>
+      <input id="modal-input" type="text" maxlength="60" placeholder="이름" />
+      <div class="modal-actions">
+        <button type="button" id="modal-cancel" class="btn-ghost">취소</button>
+        <button type="submit" class="btn-primary">확인</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 투표 만들기 모달 -->
+  <div id="poll-modal" class="modal-overlay hidden">
+    <div class="summary-box poll-box">
+      <div class="summary-head"><b>📊 투표 만들기</b><button type="button" id="poll-close" class="icon-btn" title="닫기">✕</button></div>
+      <div class="poll-form">
+        <input id="poll-q" type="text" placeholder="질문 (예: 점심 뭐 먹을까요?)" maxlength="200" autocomplete="off" />
+        <div id="poll-opts"></div>
+        <button type="button" id="poll-add" class="btn-ghost-sm">+ 선택지 추가</button>
+        <label class="poll-multi"><input type="checkbox" id="poll-multi" /> 복수 선택 허용</label>
+        <div class="poll-actions">
+          <button type="button" id="poll-create" class="ub-btn">만들기</button>
+          <button type="button" id="poll-cancel" class="ub-btn ghost">취소</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 수합 만들기 모달 -->
+  <div id="intake-modal" class="modal-overlay hidden">
+    <div class="summary-box poll-box">
+      <div class="summary-head"><b>📥 수합 만들기</b><button type="button" id="intake-close" class="icon-btn" title="닫기">✕</button></div>
+      <div class="poll-form">
+        <input id="intake-title" type="text" placeholder="제목 (예: 9월 워크숍 참석 여부)" maxlength="200" autocomplete="off" />
+        <textarea id="intake-prompt" placeholder="안내 (선택)" maxlength="1000" rows="2"></textarea>
+        <div class="intake-kindrow">
+          <label><input type="radio" name="intake-kind" id="intake-kind-text" checked /> 자유 서술</label>
+          <label><input type="radio" name="intake-kind" id="intake-kind-choice" /> 객관식</label>
+        </div>
+        <div id="intake-opts-wrap" class="hidden">
+          <div id="intake-opts"></div>
+          <button type="button" id="intake-add" class="btn-ghost-sm">+ 선택지 추가</button>
+        </div>
+        <label class="intake-duerow">마감(선택) <input id="intake-due" type="datetime-local" /></label>
+        <div class="poll-actions">
+          <button type="button" id="intake-create" class="ub-btn">만들기</button>
+          <button type="button" id="intake-cancel" class="ub-btn ghost">취소</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 문서함 모달 -->
+  <input type="file" id="doc-file-input" hidden />
+  <div id="docs-modal" class="modal-overlay hidden">
+    <div class="summary-box docs-box">
+      <div class="summary-head">
+        <b id="docs-title">📁 문서함</b>
+        <span class="docs-head-spacer"></span>
+        <button type="button" id="docs-new" class="btn-ghost-sm">+ 새 문서</button>
+        <button type="button" id="docs-close" class="icon-btn" title="닫기">✕</button>
+      </div>
+      <div id="docs-body" class="docs-body"></div>
+    </div>
+  </div>
+
+  <!-- 검색 모달 -->
+  <div id="search-modal" class="modal-overlay hidden">
+    <div class="summary-box search-box">
+      <div class="summary-head">
+        <input id="search-input" type="text" placeholder="메시지 검색…" autocomplete="off" />
+        <button type="button" id="search-close" class="icon-btn" title="닫기">✕</button>
+      </div>
+      <div id="search-results" class="search-results"></div>
+    </div>
+  </div>
+
+  <!-- 요약 결과 모달 -->
+  <div id="summary-modal" class="modal-overlay hidden">
+    <div class="summary-box">
+      <div class="summary-head">
+        <h3 id="summary-title">요약</h3>
+        <button type="button" id="summary-close" class="icon-btn" title="닫기">✕</button>
+      </div>
+      <div id="summary-body" class="summary-body"></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+# 의존성(받는 사람이 npm install 로 생성)
+node_modules/
+
+# 런타임 데이터(개인 신원/대화/파일 — 절대 커밋 금지)
+data/
+data*/
+datatest/
+
+# 환경변수(비밀키 등 — 절대 커밋 금지)
+.env
+.env.*
+!.env.example
+
+# 빌드 산출물(배포 zip)
+*.zip
+
+# 업로드/백업/결과물 디렉터리(개인정보 유출 방지)
+uploads/
+upload/
+backup/
+backups/
+result/
+results/
+tmp/
+
+# 개인정보가 들어갈 수 있는 문서/표 파일(실수로 커밋 방지)
+*.xlsx
+*.xls
+*.csv
+*.tsv
+*.hwp
+*.hwpx
+*.doc
+*.docx
+*.pdf
+*.pptx
+
+# 임시 테스트 스크립트 / 로그
+_*.js
+*.log
+npm-debug.log*
+
+# OS / 에디터 / 도구
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/

@@ -1,0 +1,17 @@
+{
+  "name": "p2p-lan-messenger",
+  "version": "2.0.0",
+  "description": "중앙서버 없는 P2P 사내 메신저 (Zulip식 채널>주제) - 같은 망 약 40명",
+  "main": "peer.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node peer.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
