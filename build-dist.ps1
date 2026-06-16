@@ -1,4 +1,4 @@
-# 배포 zip 빌드 (Windows PowerShell)
+﻿# 배포 zip 빌드 (Windows PowerShell)
 #   사내메신저_배포.zip      (Windows: start.bat)
 #   사내메신저_배포_맥.zip   (macOS: start.command + 맥-실행방법.txt)
 # node_modules 까지 포함(받는 사람 npm install 불필요). 엔트리는 정방향 슬래시로 넣어
