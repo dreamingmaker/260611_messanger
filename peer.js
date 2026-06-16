@@ -265,7 +265,7 @@ io.on('connection', (socket) => {
     uiBroadcastChannels();
   });
 
-  socket.on('send', ({ channel, topic, text, image, imw, imh, file, mentions, poll, intake, sched, task } = {}) => {
+  socket.on('send', ({ channel, topic, text, image, imw, imh, file, mentions, poll, intake, sched, task, replyTo } = {}) => {
     if (!identity.name) return;
     if (typeof channel !== 'string') return;
     const isDM = channel.indexOf('dm:') === 0;
@@ -332,6 +332,7 @@ io.on('connection', (socket) => {
     if (intakeObj) fields.intake = intakeObj;
     if (schedObj) fields.sched = schedObj;
     if (taskObj) fields.task = taskObj;
+    if (typeof replyTo === 'string' && store.records[replyTo] && store.records[replyTo].type === 'msg') fields.replyTo = replyTo;
     if (Array.isArray(mentions)) { const ids = mentions.filter((x) => typeof x === 'string').slice(0, 30); if (ids.length) fields.mentions = ids; }
     publish(newRecord(fields));
   });

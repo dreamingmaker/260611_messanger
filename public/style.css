@@ -436,6 +436,16 @@ mark { background: #ffe9a8; padding: 0 1px; }
 #intake-prompt { border: 1.5px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; resize: vertical; outline: none; width: 100%; box-sizing: border-box; }
 #intake-due { border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
 
+/* 답글 / 인용 */
+.reply-bar { display: flex; align-items: center; gap: 8px; padding: 6px 14px; background: #eef4ff; border-top: 1px solid var(--border); font-size: 13px; }
+.reply-bar-txt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reply-bar-x { border: none; background: none; cursor: pointer; font-size: 13px; color: var(--muted); }
+.reply-quote { border-left: 3px solid var(--accent); background: rgba(0,0,0,.05); padding: 3px 8px; margin-bottom: 4px; border-radius: 4px; font-size: 12px; color: var(--muted); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 360px; }
+.reply-quote:hover { background: rgba(0,0,0,.09); }
+.msg.mine .reply-quote { background: rgba(255,255,255,.22); color: rgba(255,255,255,.9); border-left-color: rgba(255,255,255,.6); }
+.msg.jump-hl .bubble { animation: jumpflash 1.4s ease; }
+@keyframes jumpflash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+
 /* 확인(ACK) */
 .ack-row { margin-top: 4px; }
 .ack-chip { background: #eaf7ee; border: 1px solid #b8e0c4; border-radius: 11px; padding: 1px 9px; font-size: 12px; cursor: pointer; color: #176b33; }

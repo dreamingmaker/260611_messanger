@@ -689,6 +689,13 @@ function appendOne(m, prev) {
     im.onclick = () => openImageFull(m.image);
     bubble.insertBefore(im, bubble.firstChild);
   }
+  if (m.replyTo && recs[m.replyTo]) {
+    const rt = recs[m.replyTo];
+    const q = document.createElement('div'); q.className = 'reply-quote';
+    q.textContent = '↩ ' + ((rt.author && rt.author.name) || '?') + ': ' + msgPreview(rt).slice(0, 60);
+    q.onclick = (e) => { e.stopPropagation(); jumpToMsg(m.replyTo); };
+    bubble.insertBefore(q, bubble.firstChild);
+  }
   if (m.poll) bubble.appendChild(renderPollCard(m));
   if (m.intake) bubble.appendChild(renderIntakeCard(m));
   if (m.sched) bubble.appendChild(renderSchedCard(m));
@@ -730,6 +737,10 @@ function appendOne(m, prev) {
   ackBtn.type = 'button'; ackBtn.className = 'msg-ctrl-btn' + (me && _acks[m.id] && _acks[m.id].has(me.id) ? ' on' : ''); ackBtn.title = '확인했음'; ackBtn.textContent = '✓';
   ackBtn.onclick = (e) => { e.stopPropagation(); socket.emit('ack', { target: m.id }); };
   ctrl.appendChild(ackBtn);
+  const reBtn = document.createElement('button');
+  reBtn.type = 'button'; reBtn.className = 'msg-ctrl-btn'; reBtn.title = '답글'; reBtn.textContent = '↩';
+  reBtn.onclick = (e) => { e.stopPropagation(); setReplyTarget(m); };
+  ctrl.appendChild(reBtn);
   if (mine && (m.text || _edits[m.id])) {
     const ebtn = document.createElement('button');
     ebtn.type = 'button'; ebtn.className = 'msg-ctrl-btn'; ebtn.title = '수정'; ebtn.textContent = '✏';
@@ -783,8 +794,10 @@ function sendCurrent() {
   if (cur.topic == null) return;
   const text = msgInput.value;
   if (!text.trim()) return;
-  socket.emit('send', { channel: cur.channel, topic: cur.topic, text: text, mentions: resolveMentions(text) });
-  msgInput.value = ''; autoGrow();
+  const payload = { channel: cur.channel, topic: cur.topic, text: text, mentions: resolveMentions(text) };
+  if (replyTo) payload.replyTo = replyTo;
+  socket.emit('send', payload);
+  msgInput.value = ''; clearReply(); autoGrow();
 }
 composer.addEventListener('submit', (e) => { e.preventDefault(); sendCurrent(); });
 // IME(한글 등) 조합 중 Enter: 글자 중복을 막고, 조합이 확정된 직후 한 번에 전송한다.
@@ -1354,6 +1367,40 @@ if (intakeBtn) {
     socket.emit('send', { channel: cur.channel, topic: cur.topic, text: '', intake: intake });
     intakeModal.classList.add('hidden');
   };
+}
+
+// ====================================================================
+// 답글 / 인용
+// ====================================================================
+const replyBar = $('reply-bar');
+let replyTo = null;
+function msgPreview(m) {
+  if (!m) return '';
+  const ed = _edits[m.id];
+  if (ed && ed.text) return ed.text;
+  if (m.text) return m.text;
+  if (m.image) return '🖼 사진';
+  if (m.file) return '📎 ' + (m.file.name || '파일');
+  if (m.poll) return '📊 ' + (m.poll.q || '투표');
+  if (m.intake) return '📥 ' + (m.intake.title || '수합');
+  if (m.sched) return '📅 ' + (m.sched.title || '일정');
+  if (m.task) return '📋 ' + (m.task.title || '작업');
+  return '메시지';
+}
+function setReplyTarget(m) {
+  replyTo = m.id;
+  replyBar.innerHTML = '';
+  const t = document.createElement('span'); t.className = 'reply-bar-txt';
+  t.textContent = '↩ ' + ((m.author && m.author.name) || '?') + ' 에게 답글: ' + msgPreview(m).slice(0, 80);
+  const x = document.createElement('button'); x.type = 'button'; x.className = 'reply-bar-x'; x.textContent = '✕'; x.onclick = clearReply;
+  replyBar.appendChild(t); replyBar.appendChild(x);
+  replyBar.classList.remove('hidden');
+  msgInput.focus();
+}
+function clearReply() { replyTo = null; replyBar.classList.add('hidden'); replyBar.innerHTML = ''; }
+function jumpToMsg(id) {
+  const el = messages.querySelector('[data-id="' + id + '"]');
+  if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('jump-hl'); setTimeout(() => el.classList.remove('jump-hl'), 1500); }
 }
 
 // ====================================================================
