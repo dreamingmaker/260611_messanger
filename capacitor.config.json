@@ -1,0 +1,13 @@
+{
+  "appId": "com.dreamingmaker.cowboyrope",
+  "appName": "로프 카우보이",
+  "webDir": "www",
+  "backgroundColor": "#1c140dff",
+  "android": {
+    "backgroundColor": "#1c140dff"
+  },
+  "ios": {
+    "backgroundColor": "#1c140dff",
+    "contentInset": "never"
+  }
+}
