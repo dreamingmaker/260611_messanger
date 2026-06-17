@@ -1,0 +1,23 @@
+{
+  "name": "cowboy-rope-mobile",
+  "version": "1.0.0",
+  "description": "로프 카우보이 — 2D 납치/구출 로프 팀전 (모바일 앱, Capacitor)",
+  "private": true,
+  "scripts": {
+    "init:android": "cap add android",
+    "init:ios": "cap add ios",
+    "sync": "cap sync",
+    "open:android": "cap open android",
+    "open:ios": "cap open ios",
+    "build:apk": "cap sync android && cd android && ./gradlew assembleDebug",
+    "serve": "npx --yes serve www -l 8080"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/ios": "^6.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}
