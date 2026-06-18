@@ -5,6 +5,9 @@ on:
     branches: [ main, "claude/cowboy-rope-mobile" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -45,9 +48,27 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Rename APK
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/debug/app-debug.apk out/cowboy-rope.apk
+          ls -lh out/
+
+      - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: cowboy-rope-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: out/cowboy-rope.apk
           if-no-files-found: error
+
+      - name: Publish APK to Release (직접 다운로드 링크)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mobile-latest
+          name: 🤠 로프 카우보이 모바일 (최신 디버그 빌드)
+          body: |
+            **로프 카우보이** 모바일 앱(Android 디버그 APK)입니다.
+            아래 `cowboy-rope.apk` 를 폰에 받아 설치하세요(설정에서 "출처를 알 수 없는 앱 설치" 허용 필요).
+            가로 모드 게임입니다. 빌드 커밋: ${{ github.sha }}
+          files: out/cowboy-rope.apk
+          make_latest: true
