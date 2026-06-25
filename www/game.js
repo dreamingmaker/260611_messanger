@@ -82,11 +82,13 @@
       aim: team === 'red' ? 0 : Math.PI,
       isHuman: !!isHuman,
       ai: !isHuman,
-      state: 'active',     // active | dragged | jailed | vault
+      state: 'active',     // active | bound | jailed | vault
       z: 0, zv: 0,         // 점프(넘기) 높이
       vaultT: 0, vaultFrom: null, vaultTo: null,
       jailSlot: null,
-      capturedBy: null,    // 나를 잡은 사람
+      bindTimer: 0,        // 포박 남은 시간(초)
+      captorTeam: null,    // 나를 포박/수감한 팀
+      reelT: null, reelFrom: null, reelTo: null, // 끌려오기 트윈
       cool: 0,             // 올가미 쿨다운
       dashCool: 0,
       stepPhase: 0,
@@ -217,39 +219,63 @@
     return null;
   }
 
-  // 잡힘 → 끌려감 시작
-  function captureTarget(thrower, target) {
-    const jail = JAIL[thrower.team]; // 잡은 쪽의 감옥
-    const slot = freeJailSlot(jail);
-    target.state = 'dragged';
-    target.capturedBy = thrower;
-    target.dragJail = jail;
-    target.dragSlot = slot;
-    target.dragT = 0;
-    target.dragFrom = { x: target.x, y: target.y };
+  // team 의 감옥 내부인지
+  function insideJail(team, x, y) {
+    const j = JAIL[team];
+    return x > j.x - 8 && x < j.x + j.w + 8 && y > j.y - 8 && y < j.y + j.h + 8;
+  }
+  // 끌려오기 트윈 시작 (대상이 던진 사람 위치로 빨려옴)
+  function reelTo(target, x, y) {
+    target.reelFrom = { x: target.x, y: target.y };
+    target.reelTo = { x: clamp(x, target.r, W - target.r), y: clamp(y, target.r, H - target.r) };
+    target.reelT = 0;
+    target.vx = target.vy = 0;
     target.lasso.state = 'idle';
-    floater(target.x, target.y - 24, '납치!', '#ffd27a');
+  }
+
+  // ① 적 포박: 던진 사람 위치로 끌어와 그 자리에서 포박(10초). 이동·올가미 불가
+  function captureTarget(thrower, target) {
+    target.state = 'bound';
+    target.bindTimer = 10;
+    target.captorTeam = thrower.team;
+    if (target.jailSlot) { target.jailSlot.taken = null; target.jailSlot = null; }
+    reelTo(target, thrower.x + Math.cos(thrower.aim) * 28, thrower.y + Math.sin(thrower.aim) * 28);
+    floater(target.x, target.y - 24, '포박!', '#ffd27a');
     spark(target.x, target.y, COL[thrower.team].body);
     screenShake = Math.min(screenShake + 6, 12);
   }
 
-  // 구출
+  // ② 아군 구출: 던진 사람 위치로 이동, 포박은 3초 뒤 풀림
   function rescueTarget(rescuer, ally) {
-    ally.state = 'active';
-    ally.capturedBy = null;
-    if (ally.jailSlot) { ally.jailSlot.taken = null; ally.jailSlot = null; }
-    ally.dragSlot = null;
-    // 구출자 근처로 복귀
-    ally.x = clamp(rescuer.x + Math.cos(rescuer.aim + Math.PI) * 30, 30, W - 30);
-    ally.y = clamp(rescuer.y, 30, H - 30);
-    ally.vx = ally.vy = 0;
-    ally.cool = 0.5;
-    floater(ally.x, ally.y - 24, '구출!', '#9fffa0');
+    ally.bindTimer = 3;
+    ally.captorTeam = null;
+    reelTo(ally, rescuer.x + Math.cos(rescuer.aim) * 28, rescuer.y + Math.sin(rescuer.aim) * 28);
+    floater(ally.x, ally.y - 24, '구출! 3초', '#9fffa0');
     for (let i = 0; i < 14; i++) {
       const a = rand(0, TAU);
       particles.push({ x: ally.x, y: ally.y, vx: Math.cos(a) * rand(1, 4), vy: Math.sin(a) * rand(1, 4), life: 1, col: '#9fffa0', r: rand(2, 4) });
     }
     screenShake = Math.min(screenShake + 5, 12);
+  }
+
+  // ③ 포박한 적 재포획: 던진 사람 위치로 끌고 옴 → 내 감옥 안이면 영구 수감(탈옥 불가)
+  function regrabTarget(thrower, target) {
+    const tx = thrower.x + Math.cos(thrower.aim) * 28, ty = thrower.y + Math.sin(thrower.aim) * 28;
+    if (insideJail(thrower.team, thrower.x, thrower.y)) {
+      const slot = freeJailSlot(JAIL[thrower.team]);
+      if (slot) { slot.taken = target; target.jailSlot = slot; reelTo(target, slot.x, slot.y); }
+      else reelTo(target, thrower.x, thrower.y);
+      target.state = 'jailed';
+      target.bindTimer = 0;
+      target.captorTeam = thrower.team;
+      floater(target.x, target.y - 26, '수감! 탈옥불가', '#ff8a7a');
+      spark(target.x, target.y, '#ff8a7a');
+      screenShake = Math.min(screenShake + 7, 12);
+    } else {
+      target.bindTimer = 10;            // 다시 10초 포박
+      reelTo(target, tx, ty);
+      floater(target.x, target.y - 24, '끌려감', '#ffd27a');
+    }
   }
 
   // 벽 그래플(넘기) 시작
@@ -300,12 +326,15 @@
       if (o === c) continue;
       const near = dist2(L.tx, L.ty, o.x, o.y) < (o.r + 8) * (o.r + 8);
       if (!near) continue;
-      if (o.team !== c.team && o.state === 'active') {
+      if (o.state === 'jailed') continue;            // 수감자는 손댈 수 없음(탈옥 불가)
+      if (o.team !== c.team && o.state === 'active') { // 적 포박
         captureTarget(c, o); L.state = 'idle'; return true;
       }
-      // 잡힌 아군 구출 (dragged/jailed)
-      if (o.team === c.team && (o.state === 'dragged' || o.state === 'jailed')) {
+      if (o.team === c.team && o.state === 'bound') {  // 포박된 아군 구출
         rescueTarget(c, o); L.state = 'idle'; return true;
+      }
+      if (o.team !== c.team && o.state === 'bound') {  // 포박한 적 재포획→감옥으로
+        regrabTarget(c, o); L.state = 'idle'; return true;
       }
     }
     // 2) 벽 그래플 고리(넘기)
@@ -388,9 +417,21 @@
     if (keys['d'] || keys['arrowright']) ax += 1;
     if (tstick.active) { ax += tstick.dx; ay += tstick.dy; }
 
-    // 조준: 마우스 방향 (터치면 이동 방향)
-    if (isTouch() && (ax || ay)) c.aim = Math.atan2(ay, ax);
-    else c.aim = Math.atan2(mouse.y - c.y, mouse.x - c.x);
+    const firing = mouse.down || touchFire || keys[' '];
+    const L = c.lasso;
+    const charging = firing && (L.state === 'idle' || L.state === 'charge') && c.cool <= 0;
+
+    // 조준
+    if (isTouch()) {
+      // 터치: 조이스틱 방향으로 조준 → 올가미 버튼을 누른 채 스틱을 움직여 방향 조절
+      if (ax || ay) c.aim = Math.atan2(ay, ax);
+    } else {
+      c.aim = Math.atan2(mouse.y - c.y, mouse.x - c.x);
+    }
+
+    // 충전 중(터치)에는 스틱을 조준 전용으로 — 이동은 멈춰 정밀 조준
+    let mvx = ax, mvy = ay;
+    if (charging && isTouch()) { mvx = 0; mvy = 0; }
 
     let speed = 3.0;
     // 대시
@@ -400,12 +441,10 @@
       c.dashCool = 0.9;
       for (let i = 0; i < 8; i++) puff(c.x, c.y, 2, 'rgba(255,240,200,.7)');
     }
-    moveCowboy(c, ax, ay, speed, dt);
+    moveCowboy(c, mvx, mvy, speed, dt);
 
     // 올가미: 누르고 있으면 충전, 떼면 발사
-    const firing = mouse.down || touchFire || keys[' '];
-    const L = c.lasso;
-    if (firing && (L.state === 'idle' || L.state === 'charge') && c.cool <= 0) {
+    if (charging) {
       L.state = 'charge';
       L.charge = clamp(L.charge + dt * 1.6, 0, 1);
     } else if (!firing && L.state === 'charge') {
@@ -433,71 +472,98 @@
     return null;
   }
 
+  function closestAllyTo(c, x, y) {
+    // c 가 (x,y) 대상에 가장 가까운 '활동중' 아군인가
+    for (const o of cowboys) {
+      if (o === c || o.team !== c.team || o.state !== 'active') continue;
+      if (dist2(o.x, o.y, x, y) < dist2(c.x, c.y, x, y)) return false;
+    }
+    return true;
+  }
+  function wander(c, dt) {
+    const cx = c.team === 'red' ? W * 0.42 : W * 0.58;
+    moveCowboy(c, cx - c.x, H / 2 - c.y, diff.aiSpeed * 0.5, dt);
+  }
+
   function updateAI(c, dt) {
     if (c.state !== 'active') return;
     c.aiTimer -= dt;
+    const L = c.lasso;
 
-    // 우선순위: 잡힌 아군 구출 > 가까운 적 사냥
-    const captiveAlly = nearest(c, o => o.team === c.team && (o.state === 'dragged' || o.state === 'jailed'));
+    // 후보 탐색
+    let boundEnemy = nearest(c, o => o.team !== c.team && o.state === 'bound' && o.captorTeam === c.team);
+    const captiveAlly = nearest(c, o => o.team === c.team && o.state === 'bound');
     const enemy = nearest(c, o => o.team !== c.team && o.state === 'active');
-    let target = null, mode = 'hunt';
-    if (captiveAlly && (!enemy || Math.random() < 0.5)) { target = captiveAlly; mode = 'rescue'; }
-    else if (enemy) { target = enemy; mode = 'hunt'; }
 
-    if (!target) { moveCowboy(c, 0, 0, 0, dt); return; }
+    // 포박한 적은 가장 가까운 한 명만 감옥으로 호송(나머지는 계속 사냥)
+    if (boundEnemy && !closestAllyTo(c, boundEnemy.x, boundEnemy.y)) boundEnemy = null;
+
+    let target = null, mode = 'hunt';
+    if (boundEnemy) { target = boundEnemy; mode = 'jail'; }
+    else if (captiveAlly && (!enemy || dist2(c.x, c.y, captiveAlly.x, captiveAlly.y) < dist2(c.x, c.y, enemy.x, enemy.y) * 0.8)) {
+      target = captiveAlly; mode = 'rescue';
+    } else if (enemy) { target = enemy; mode = 'hunt'; }
+
+    if (!target) { wander(c, dt); return; }
     c.aiTarget = target;
 
     const d = dist(c.x, c.y, target.x, target.y);
     const toAng = Math.atan2(target.y - c.y, target.x - c.x);
 
-    // 조준 서서히 정렬 (정확도 ↔ 흔들림)
-    const jitter = (1 - diff.accuracy) * 0.6;
-    const want = toAng + rand(-jitter, jitter);
-    c.aim = angLerp(c.aim, want, 0.18);
+    // 조준 빠르게 정렬 (대치에서 머뭇거리지 않도록)
+    const jitter = (1 - diff.accuracy) * 0.45;
+    c.aim = angLerp(c.aim, toAng + rand(-jitter, jitter), 0.3);
 
-    // 이동: 사거리 안이면 멈춰서 조준, 멀면 접근, 막히면 회피
-    let ax = Math.cos(toAng), ay = Math.sin(toAng);
-    const idealRange = diff.range * 0.7;
-    const blocker = blockedTowards(c, target.x, target.y);
+    // 호송(jail) 모드는 '내 감옥'으로 이동하며 포박한 적을 끌어당겨 점점 감옥으로
+    const jailC = JAIL[c.team];
+    const moveX = mode === 'jail' ? (jailC.x + jailC.w / 2) : target.x;
+    const moveY = mode === 'jail' ? (jailC.y + jailC.h / 2) : target.y;
+    const mvAng = Math.atan2(moveY - c.y, moveX - c.x);
+
+    let ax = Math.cos(mvAng), ay = Math.sin(mvAng);
+    const blocker = blockedTowards(c, moveX, moveY);
     if (blocker) {
-      // 막혔으면 벽 옆으로 우회 (수직 방향)
-      ax = -Math.sin(toAng); ay = Math.cos(toAng);
-      if ((c.x % 97) < 48) { ax = -ax; ay = -ay; }
-      // 가끔 벽에 그래플 (넘기) 시도
-      if (blocker.type === 'wall' && c.lasso.state === 'idle' && c.cool <= 0 && Math.random() < 0.04) {
+      // 벽 옆으로 우회 (수직 방향, 위치에 따라 좌/우)
+      ax = -Math.sin(mvAng); ay = Math.cos(mvAng);
+      if (((c.y | 0) % 130) < 65) { ax = -ax; ay = -ay; }
+      if (blocker.type === 'wall' && L.state === 'idle' && c.cool <= 0 && Math.random() < 0.05) {
         c.aim = Math.atan2(blocker.anchor.y - c.y, blocker.anchor.x - c.x);
-        const L = c.lasso; L.charge = 0.6; throwLasso(c);
+        L.charge = 0.6; throwLasso(c);
       }
-    } else if (d < idealRange) {
-      ax *= -0.2; ay *= -0.2; // 너무 붙지 않게 살짝 유지
+    } else if (mode === 'hunt' && d < diff.range * 0.6) {
+      ax = 0; ay = 0;            // 사거리 안 → 멈춰서 조준·발사 (우왕좌왕 방지)
+    } else if (mode === 'jail' && insideJail(c.team, c.x, c.y) && d < diff.range) {
+      ax = 0; ay = 0;            // 감옥 안에서 끌어당기는 중
     }
     moveCowboy(c, ax, ay, diff.aiSpeed, dt);
 
-    // 발사 판단: 조준 정렬 + 사거리 + 쿨다운 + 반응시간
+    // 발사 판단
     const aimErr = Math.abs(((toAng - c.aim + Math.PI) % TAU) - Math.PI);
-    if (!blocker && c.lasso.state === 'idle' && c.cool <= 0 && c.aiTimer <= 0
-        && d < diff.range && aimErr < 0.22) {
-      const L = c.lasso;
-      L.charge = clamp((d - 120) / 200, 0.1, 1);
+    const losBlocker = blockedTowards(c, target.x, target.y); // 표적까지 시야가 막혔나
+    if (L.state === 'idle' && c.cool <= 0 && c.aiTimer <= 0 && !losBlocker && d < diff.range && aimErr < 0.3) {
+      L.charge = clamp((d - 110) / 200, 0.15, 1);
       throwLasso(c);
       c.aiTimer = diff.cooldown + rand(0, diff.react);
     }
   }
 
-  // ---------- 끌려감 / 수감 ----------
-  function updateDragged(c, dt) {
-    if (c.state !== 'dragged') return;
-    c.dragT += dt * 0.8;
-    const slot = c.dragSlot;
-    let tx, ty;
-    if (slot) { tx = slot.x; ty = slot.y; }
-    else { const j = c.dragJail; tx = j.x + j.w / 2; ty = j.y + j.h / 2; }
-    const t = clamp(c.dragT, 0, 1);
-    c.x = lerp(c.dragFrom.x, tx, t);
-    c.y = lerp(c.dragFrom.y, ty, t);
-    if (t >= 1) {
-      if (slot && !slot.taken) { slot.taken = c; c.jailSlot = slot; }
-      c.state = 'jailed';
+  // ---------- 포박 / 수감 ----------
+  function updateBound(c, dt) {
+    // 끌려오기 트윈 (활동 상태가 아닐 때만)
+    if (c.state !== 'active' && c.reelT != null && c.reelT < 1) {
+      c.reelT = Math.min(1, c.reelT + dt * 4); // ~0.25초
+      const t = c.reelT;
+      c.x = lerp(c.reelFrom.x, c.reelTo.x, t);
+      c.y = lerp(c.reelFrom.y, c.reelTo.y, t);
+    }
+    if (c.state === 'bound') {
+      c.bindTimer -= dt;
+      if (c.bindTimer <= 0) {            // ④/⑤ 시간 경과 시 포박 해제
+        c.state = 'active'; c.captorTeam = null; c.bindTimer = 0;
+        floater(c.x, c.y - 22, '해제!', '#cfe9ff');
+      }
+    } else if (c.state === 'jailed' && c.jailSlot && c.reelT >= 1) {
+      c.x = c.jailSlot.x; c.y = c.jailSlot.y; // 감옥 슬롯 고정 (탈옥 불가)
     }
   }
 
@@ -534,11 +600,11 @@
   }
 
   // ---------- 승패 판정 ----------
-  function imprisoned(team) { return cowboys.filter(c => c.team === team && (c.state === 'jailed' || c.state === 'dragged')).length; }
+  function imprisoned(team) { return cowboys.filter(c => c.team === team && (c.state === 'jailed' || c.state === 'bound')).length; }
   function checkWin() {
     if (gameOver) return;
     const blueOut = imprisoned('blue'), redOut = imprisoned('red');
-    if (blueOut >= 3) endGame(true, '적 카우보이 3명을 모두 가뒀다! 🤠');
+    if (blueOut >= 3) endGame(true, '적 카우보이 3명을 동시에 잡았다! 🤠');
     else if (redOut >= 3) endGame(false, '우리 팀이 모두 잡혔다… 🪢');
     else if (timeLeft <= 0) {
       if (blueOut > redOut) endGame(true, `시간 종료 — 더 많이 가둠 (${blueOut} : ${redOut})`);
@@ -667,11 +733,19 @@
       ctx.beginPath(); ctx.moveTo(sx, sy - c.z - 22); ctx.lineTo(sx - 4, sy - c.z - 18); ctx.lineTo(sx + 4, sy - c.z - 18); ctx.closePath();
       ctx.fill();
     }
-    // 갇힘/끌림 표시
-    if (c.state === 'jailed' || c.state === 'dragged') {
-      ctx.fillStyle = 'rgba(255,255,255,.85)';
-      ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText('😣', sx, sy - 18);
+    // 포박/수감 표시
+    if (c.state === 'bound') {
+      // 밧줄 감김
+      ctx.strokeStyle = 'rgba(120,80,40,.9)'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(sx, sy, c.r - 1, c.r * 0.55, 0, 0, TAU); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+      ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3;
+      const t = '🔒' + Math.ceil(c.bindTimer) + 's';
+      ctx.strokeText(t, sx, sy - c.z - 22); ctx.fillText(t, sx, sy - c.z - 22);
+    } else if (c.state === 'jailed') {
+      ctx.fillStyle = 'rgba(255,190,190,.95)'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
+      ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3;
+      ctx.strokeText('⛓ 수감', sx, sy - c.z - 22); ctx.fillText('⛓ 수감', sx, sy - c.z - 22);
     }
   }
 
@@ -791,7 +865,7 @@
       c.dashCool = Math.max(0, c.dashCool - dt);
       if (c.isHuman) updatePlayer(c, dt);
       else updateAI(c, dt);
-      updateDragged(c, dt);
+      updateBound(c, dt);
       updateVault(c, dt);
       updateLasso(c, dt);
     }
