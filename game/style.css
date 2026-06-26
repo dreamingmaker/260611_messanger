@@ -201,3 +201,16 @@ button.big:active { transform: translateY(4px); box-shadow: 0 1px 0 #a06a1c; }
   font-weight: bold;
   z-index: 15;
 }
+
+/* 오른쪽 올가미 버튼 = 조준 스틱 */
+.fire { overflow: visible; }
+.fire .aimnub {
+  position: absolute; left: 50%; top: 50%;
+  width: 34px; height: 34px; margin: -17px 0 0 -17px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.55);
+  border: 2px solid #fff;
+  pointer-events: none;
+}
+.fire .firelabel { pointer-events: none; text-align: center; line-height: 1.05; }
+.fire .firelabel small { font-size: 10px; opacity: .85; font-weight: normal; }
