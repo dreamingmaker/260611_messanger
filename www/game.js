@@ -162,24 +162,46 @@
   const stick = document.getElementById('stick');
   const nub = stick.querySelector('.nub');
   const fireBtn = document.getElementById('fireBtn');
-  const tstick = { active: false, dx: 0, dy: 0, id: null };
+  const tstick = { active: false, dx: 0, dy: 0, id: null };   // 왼쪽: 이동
+  const astick = { active: false, dx: 1, dy: 0, id: null };   // 오른쪽: 조준(자유 360°)
   let touchFire = false;
+  const aimNub = fireBtn.querySelector('.aimnub');
   function isTouch() { return ('ontouchstart' in window) || navigator.maxTouchPoints > 0; }
+  function setStick(t) {
+    const r = stick.getBoundingClientRect();
+    let dx = t.clientX - (r.left + r.width / 2), dy = t.clientY - (r.top + r.height / 2);
+    const m = Math.hypot(dx, dy), max = r.width / 2 || 1;
+    if (m > max) { dx = dx / m * max; dy = dy / m * max; }
+    tstick.dx = dx / max; tstick.dy = dy / max; tstick.active = true;
+    nub.style.transform = `translate(${dx}px,${dy}px)`;
+  }
+  function setAim(t) {
+    const r = fireBtn.getBoundingClientRect();
+    let dx = t.clientX - (r.left + r.width / 2), dy = t.clientY - (r.top + r.height / 2);
+    const m = Math.hypot(dx, dy);
+    if (m > 7) { // 살짝만 끌어도 방향 갱신 → 360° 자유 조준
+      astick.dx = dx / m; astick.dy = dy / m; astick.active = true;
+      if (aimNub) { const k = Math.min(m, (r.width / 2) || 40); aimNub.style.transform = `translate(${astick.dx * k}px,${astick.dy * k}px)`; }
+    }
+  }
   if (isTouch()) {
-    stick.addEventListener('touchstart', e => { tstick.active = true; e.preventDefault(); }, { passive: false });
-    stick.addEventListener('touchmove', e => {
-      const t = e.touches[0]; const r = stick.getBoundingClientRect();
-      let dx = t.clientX - (r.left + r.width / 2), dy = t.clientY - (r.top + r.height / 2);
-      const m = Math.hypot(dx, dy), max = r.width / 2;
-      if (m > max) { dx = dx / m * max; dy = dy / m * max; }
-      tstick.dx = dx / max; tstick.dy = dy / max;
-      nub.style.transform = `translate(${dx}px,${dy}px)`;
-      e.preventDefault();
+    stick.addEventListener('touchstart', e => { const t = e.changedTouches[0]; if (tstick.id === null) { tstick.id = t.identifier; setStick(t); } e.preventDefault(); }, { passive: false });
+    fireBtn.addEventListener('touchstart', e => { const t = e.changedTouches[0]; if (astick.id === null) { astick.id = t.identifier; touchFire = true; setAim(t); } e.preventDefault(); }, { passive: false });
+    window.addEventListener('touchmove', e => {
+      let used = false;
+      for (const t of e.changedTouches) {
+        if (t.identifier === tstick.id) { setStick(t); used = true; }
+        else if (t.identifier === astick.id) { setAim(t); used = true; }
+      }
+      if (used) e.preventDefault();
     }, { passive: false });
-    const endStick = e => { tstick.active = false; tstick.dx = tstick.dy = 0; nub.style.transform = ''; };
-    stick.addEventListener('touchend', endStick); stick.addEventListener('touchcancel', endStick);
-    fireBtn.addEventListener('touchstart', e => { touchFire = true; e.preventDefault(); }, { passive: false });
-    fireBtn.addEventListener('touchend', e => { touchFire = false; e.preventDefault(); }, { passive: false });
+    const endTouch = e => {
+      for (const t of e.changedTouches) {
+        if (t.identifier === tstick.id) { tstick.id = null; tstick.active = false; tstick.dx = tstick.dy = 0; nub.style.transform = ''; }
+        else if (t.identifier === astick.id) { astick.id = null; astick.active = false; touchFire = false; if (aimNub) aimNub.style.transform = ''; }
+      }
+    };
+    window.addEventListener('touchend', endTouch); window.addEventListener('touchcancel', endTouch);
   }
 
   // ---------- 충돌: 원 vs 사각형 ----------
@@ -421,18 +443,14 @@
     const L = c.lasso;
     const charging = firing && (L.state === 'idle' || L.state === 'charge') && c.cool <= 0;
 
-    // 조준
+    // 조준: 터치는 오른쪽 올가미 스틱(자유 360°), PC는 마우스. 이동(왼쪽)과 독립 → 동시 조작
     if (isTouch()) {
-      // 터치: 조이스틱 방향으로 조준 → 올가미 버튼을 누른 채 스틱을 움직여 방향 조절
-      if (ax || ay) c.aim = Math.atan2(ay, ax);
+      c.aim = Math.atan2(astick.dy, astick.dx);
     } else {
       c.aim = Math.atan2(mouse.y - c.y, mouse.x - c.x);
     }
 
-    // 충전 중(터치)에는 스틱을 조준 전용으로 — 이동은 멈춰 정밀 조준
     let mvx = ax, mvy = ay;
-    if (charging && isTouch()) { mvx = 0; mvy = 0; }
-
     let speed = 3.0;
     // 대시
     if ((keys['shift']) && c.dashCool <= 0 && (ax || ay)) {
@@ -824,18 +842,46 @@
     for (const c of sorted) { drawLasso(c); drawCowboy(c); }
     drawParticles();
     ctx.restore();
+    if (running) drawHUD();   // 게임판을 가리지 않게 캔버스 상단 얇은 띠에 표시
   }
 
-  // ---------- HUD ----------
+  // ---------- HUD (캔버스 내, 상단 빈 영역) ----------
   function fmtTime(s) {
     s = Math.max(0, Math.ceil(s));
     const m = Math.floor(s / 60), ss = s % 60;
     return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
   }
-  function updateHUD() {
-    document.getElementById('redCaptured').textContent = imprisoned('red');
-    document.getElementById('blueCaptured').textContent = imprisoned('blue');
-    document.getElementById('timer').textContent = fmtTime(timeLeft);
+  function pill(x, y, w, h) {
+    const r = h / 2;
+    ctx.fillStyle = 'rgba(20,12,6,.5)';
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.fill();
+  }
+  function drawHUD() {
+    const rc = imprisoned('red'), bc = imprisoned('blue');
+    ctx.save();
+    ctx.textBaseline = 'middle';
+    const y = 7, h = 24, cy = y + h / 2;
+    // 좌: 레드 갇힘
+    pill(8, y, 138, h);
+    ctx.fillStyle = COL.red.body; ctx.beginPath(); ctx.arc(22, cy, 6, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(`레드 갇힘 ${rc}/3`, 34, cy + 1);
+    // 우: 블루 갇힘
+    pill(W - 146, y, 138, h);
+    ctx.fillStyle = COL.blue.body; ctx.beginPath(); ctx.arc(W - 22, cy, 6, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'right';
+    ctx.fillText(`블루 갇힘 ${bc}/3`, W - 34, cy + 1);
+    // 중앙: 타이머
+    pill(W / 2 - 44, y, 88, h);
+    ctx.fillStyle = '#ffe9b0'; ctx.font = 'bold 17px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(fmtTime(timeLeft), W / 2, cy + 1);
+    ctx.restore();
   }
 
   // ============================================================
@@ -855,7 +901,6 @@
       timeLeft -= dt;
     }
     render();
-    if (running) updateHUD();
   }
 
   function step(dt) {
@@ -893,7 +938,6 @@
     diff = DIFF[document.querySelector('.diff.active').dataset.diff] || DIFF.normal;
     menu.classList.add('hidden');
     result.classList.add('hidden');
-    hud.classList.remove('hidden');
     if (isTouch()) touchUI.classList.remove('hidden');
     resetGame();
   }
