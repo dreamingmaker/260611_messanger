@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>🤠 로프 카우보이 — 납치 & 구출 팀전</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="game" width="960" height="600"></canvas>
+
+    <!-- 시작 화면 -->
+    <div id="menu" class="overlay">
+      <div class="panel">
+        <h1>🤠 로프 카우보이</h1>
+        <p class="subtitle">올가미를 돌려 적을 <b>납치</b>하고, 잡힌 동료를 <b>구출</b>하라!</p>
+        <div class="howto">
+          <div><span class="key">WASD</span> 이동</div>
+          <div><span class="key">마우스</span> 조준 (누른 채 움직여 방향 조절)</div>
+          <div><span class="key">왼클릭 / Space</span> 올가미 (누르면 조준·이동 느려짐, 5초+ ⚡필살)</div>
+          <div><span class="key">Shift</span> 대시(구르기)</div>
+        </div>
+        <div class="rules">
+          <p>🎯 <b>적</b>을 맞히면 내 위치로 끌어와 <b>포박</b>(10초). 포박된 적은 아무것도 못 합니다.</p>
+          <p>⛓ 포박한 적을 <b>내 감옥 안</b>에서 다시 맞히면 <b>수감</b>!</p>
+          <p>🛟 포박된 <b>우리 팀</b>을 맞히면 내 곁으로 데려와 3초 뒤 풀림. <b>적 감옥에 침투</b>하면 갇힌 우리 팀 전원 탈옥!</p>
+          <p>🧱 로프는 <b>벽을 못 뚫습니다</b>. 벽 <b>노란 고리</b>에 걸면 넘어가고, 📦 상자는 끌어와요.</p>
+          <p>🎯 조준 중엔 이동이 느려지고, <b>5초 이상</b> 충전하면 <b>⚡필살</b>(사거리↑)!</p>
+          <p>🏆 적 3명을 <b>동시에</b> 잡으면 승리!</p>
+        </div>
+        <div class="diffrow">
+          <label>난이도</label>
+          <button class="diff" data-diff="easy">쉬움</button>
+          <button class="diff active" data-diff="normal">보통</button>
+          <button class="diff" data-diff="hard">어려움</button>
+        </div>
+        <button id="startBtn" class="big">게임 시작</button>
+      </div>
+    </div>
+
+    <!-- 결과 화면 -->
+    <div id="result" class="overlay hidden">
+      <div class="panel">
+        <h1 id="resultTitle">승리!</h1>
+        <p id="resultText"></p>
+        <button id="againBtn" class="big">다시 하기</button>
+      </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+      <div class="hudbar">
+        <div class="team red"><span class="dot"></span> 레드 <b id="redCaptured">0</b>/3 갇힘</div>
+        <div class="timer" id="timer">02:00</div>
+        <div class="team blue"><span class="dot"></span> 블루 <b id="blueCaptured">0</b>/3 갇힘</div>
+      </div>
+    </div>
+
+    <!-- 모바일 조작: 왼쪽=이동, 오른쪽=조준+발사 -->
+    <div id="touch" class="hidden">
+      <div id="stick" class="stick"><div class="nub"></div></div>
+      <div id="fireBtn" class="fire"><div class="aimnub"></div><span class="firelabel">올가미<br><small>끌어서 조준</small></span></div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
