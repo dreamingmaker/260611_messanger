@@ -104,6 +104,8 @@
       vx: 0, vy: 0,
       len: 0, maxLen: 0,
       charge: 0,
+      holdTime: 0,         // 버튼 누른 시간(초) — 5초↑ 필살
+      ult: false,          // 필살 올가미 여부
       spin: 0,             // 머리 위 회전 각
       hooked: null,        // {kind:'enemy'|'ally'|'crate'|'anchor', ref}
     };
@@ -217,13 +219,15 @@
   function solidObstacles() { return obstacles; } // 벽/바위/상자 모두 솔리드
 
   // ---------- 올가미 발사 ----------
+  const LASSO_REACH = 240;           // 기본 사거리(충전해도 늘지 않음)
   function throwLasso(c) {
     const L = c.lasso;
     if (c.state !== 'active' || c.cool > 0) return;
     if (L.state !== 'idle' && L.state !== 'charge') return;
-    const power = clamp(L.charge, 0, 1);
-    L.maxLen = 150 + power * 170;     // 사거리
-    const sp = 13 + power * 5;        // 발사 속도
+    const ULT = L.holdTime >= 5;      // 5초↑ 충전 = 필살(사거리 1.2배)
+    L.maxLen = ULT ? LASSO_REACH * 1.2 : LASSO_REACH;
+    L.ult = ULT;
+    const sp = 14;                    // 발사 속도(고정)
     L.state = 'throw';
     L.tx = c.x + Math.cos(c.aim) * c.r;
     L.ty = c.y + Math.sin(c.aim) * c.r;
@@ -232,8 +236,10 @@
     L.len = 0;
     L.hooked = null;
     L.charge = 0;
+    L.holdTime = 0;
     c.cool = 0.45;
-    puff(c.x + Math.cos(c.aim) * 18, c.y + Math.sin(c.aim) * 18, 4, '#fff6d8');
+    puff(c.x + Math.cos(c.aim) * 18, c.y + Math.sin(c.aim) * 18, 4, ULT ? '#ffd24a' : '#fff6d8');
+    if (ULT) { spark(c.x, c.y, '#ffd24a'); floater(c.x, c.y - 28, '필살 올가미!', '#ffd24a'); }
   }
 
   function freeJailSlot(jail) {
@@ -290,7 +296,7 @@
       target.state = 'jailed';
       target.bindTimer = 0;
       target.captorTeam = thrower.team;
-      floater(target.x, target.y - 26, '수감! 탈옥불가', '#ff8a7a');
+      floater(target.x, target.y - 26, '수감!', '#ff8a7a');
       spark(target.x, target.y, '#ff8a7a');
       screenShake = Math.min(screenShake + 7, 12);
     } else {
@@ -377,6 +383,14 @@
         L.state = 'retract'; return true;
       }
     }
+    // 4) 벽/바위에 막힘 — 로프가 뚫지 못함 (고리 조준 시 넘기는 위 2)에서 처리)
+    for (const o of obstacles) {
+      if (o.type === 'crate') continue;
+      if (collideCircleRect(L.tx, L.ty, 4, o.x, o.y, o.w, o.h)) {
+        puff(L.tx, L.ty, 4, 'rgba(120,90,50,.8)');
+        L.state = 'retract'; return true;
+      }
+    }
     return false;
   }
 
@@ -452,8 +466,13 @@
 
     let mvx = ax, mvy = ay;
     let speed = 3.0;
-    // 대시
-    if ((keys['shift']) && c.dashCool <= 0 && (ax || ay)) {
+    // 조준(충전) 중 감속: 누르면 절반, 5초↑(필살)이면 다시 절반(=1/4)
+    if (charging) {
+      speed *= 0.5;
+      if (L.holdTime >= 5) speed *= 0.5;
+    }
+    // 대시 (조준 중에는 불가)
+    if ((keys['shift']) && !charging && c.dashCool <= 0 && (ax || ay)) {
       const m = Math.hypot(ax, ay) || 1;
       c.vx += ax / m * 9; c.vy += ay / m * 9;
       c.dashCool = 0.9;
@@ -461,10 +480,11 @@
     }
     moveCowboy(c, mvx, mvy, speed, dt);
 
-    // 올가미: 누르고 있으면 충전, 떼면 발사
+    // 올가미: 누르고 있으면 충전(시간 누적), 떼면 발사
     if (charging) {
       L.state = 'charge';
-      L.charge = clamp(L.charge + dt * 1.6, 0, 1);
+      L.holdTime += dt;
+      L.charge = clamp(L.holdTime / 0.6, 0, 1); // 시각용
     } else if (!firing && L.state === 'charge') {
       throwLasso(c);
     }
@@ -558,8 +578,7 @@
     // 발사 판단
     const aimErr = Math.abs(((toAng - c.aim + Math.PI) % TAU) - Math.PI);
     const losBlocker = blockedTowards(c, target.x, target.y); // 표적까지 시야가 막혔나
-    if (L.state === 'idle' && c.cool <= 0 && c.aiTimer <= 0 && !losBlocker && d < diff.range && aimErr < 0.3) {
-      L.charge = clamp((d - 110) / 200, 0.15, 1);
+    if (L.state === 'idle' && c.cool <= 0 && c.aiTimer <= 0 && !losBlocker && d < LASSO_REACH - 12 && aimErr < 0.3) {
       throwLasso(c);
       c.aiTimer = diff.cooldown + rand(0, diff.react);
     }
@@ -582,6 +601,27 @@
       }
     } else if (c.state === 'jailed' && c.jailSlot && c.reelT >= 1) {
       c.x = c.jailSlot.x; c.y = c.jailSlot.y; // 감옥 슬롯 고정 (탈옥 불가)
+    }
+  }
+
+  // ---------- 적 감옥 침투 → 갇힌 우리 팀 전원 탈옥 ----------
+  function otherTeam(team) { return team === 'red' ? 'blue' : 'red'; }
+  function checkJailbreak() {
+    for (const c of cowboys) {
+      if (c.state !== 'active') continue;
+      // 우리 팀 포로는 '적 팀의 감옥(JAIL[적팀])'에 갇혀 있음 → 거기 침투하면 해방
+      const enemy = otherTeam(c.team);
+      if (!insideJail(enemy, c.x, c.y)) continue;
+      for (const p of cowboys) {
+        if (p.team !== c.team || p.state !== 'jailed') continue;
+        if (p.jailSlot) { p.jailSlot.taken = null; p.jailSlot = null; }
+        p.state = 'active'; p.bindTimer = 0; p.captorTeam = null; p.reelT = 1;
+        p.x = clamp(c.x + rand(-26, 26), p.r, W - p.r);
+        p.y = clamp(c.y + rand(-26, 26), p.r, H - p.r);
+        p.vx = p.vy = 0; p.cool = 0.4;
+        floater(p.x, p.y - 24, '탈옥!', '#9fffa0');
+        spark(p.x, p.y, '#9fffa0');
+      }
     }
   }
 
@@ -783,20 +823,32 @@
       return;
     }
     if (L.state === 'charge') {
-      // 충전: 점점 커지는 회전 올가미
+      const ultReady = L.holdTime >= 5;
+      const ratio = clamp(L.holdTime / 5, 0, 1); // 5초까지 차오름
+      // 충전: 회전 올가미 (필살 차오를수록 커지고 금색)
       ctx.save();
       ctx.translate(c.x, c.y - c.z - 24);
       ctx.rotate(L.spin);
-      const rr = 9 + L.charge * 14;
-      ctx.strokeStyle = '#caa05a'; ctx.lineWidth = 3;
+      const rr = 9 + ratio * 15;
+      ctx.strokeStyle = ultReady ? '#ffd24a' : '#caa05a';
+      ctx.lineWidth = ultReady ? 4 : 3;
       ctx.beginPath(); ctx.ellipse(rr * 0.6, 0, rr, rr * 0.55, 0, 0, TAU); ctx.stroke();
       ctx.restore();
-      // 조준 가이드
-      ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.setLineDash([6, 8]); ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(c.x, c.y);
-      const gl = 150 + L.charge * 170;
+      // 조준 가이드 (사거리 고정, 필살이면 1.2배·금색)
+      const gl = ultReady ? LASSO_REACH * 1.2 : LASSO_REACH;
+      ctx.strokeStyle = ultReady ? 'rgba(255,210,74,.6)' : 'rgba(255,255,255,.28)';
+      ctx.setLineDash([6, 8]); ctx.lineWidth = ultReady ? 3 : 2;
+      ctx.beginPath(); ctx.moveTo(c.x, c.y - c.z);
       ctx.lineTo(c.x + Math.cos(c.aim) * gl, c.y + Math.sin(c.aim) * gl);
       ctx.stroke(); ctx.setLineDash([]);
+      // 필살 충전 표시
+      if (c.isHuman && !ultReady && L.holdTime > 0.4) {
+        ctx.fillStyle = '#ffe9b0'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('필살 충전 ' + Math.ceil(5 - L.holdTime) + 's', c.x, c.y - c.z - 40);
+      } else if (c.isHuman && ultReady) {
+        ctx.fillStyle = '#ffd24a'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('⚡필살 준비!', c.x, c.y - c.z - 40);
+      }
       return;
     }
     // throw / retract : 밧줄 + 끝 올가미 루프
@@ -915,6 +967,7 @@
       updateLasso(c, dt);
     }
     updateCrates();
+    checkJailbreak();
     updateParticles(dt);
     checkWin();
   }
